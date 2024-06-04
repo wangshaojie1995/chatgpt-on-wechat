@@ -146,7 +146,8 @@ available_setting = {
     
     # 钉钉配置
     "dingtalk_client_id": "",  # 钉钉机器人Client ID 
-    "dingtalk_client_secret": "",  # 钉钉机器人Client Secret 
+    "dingtalk_client_secret": "",  # 钉钉机器人Client Secret
+    "dingtalk_card_enabled": False,
     
     # chatgpt指令自定义触发词
     "clear_memory_commands": ["#清除记忆"],  # 重置会话指令，必须以#开头
@@ -229,6 +230,24 @@ class Config(dict):
 
 
 config = Config()
+
+
+def drag_sensitive(config):
+    if isinstance(config, str):
+        conf_dict: dict = json.loads(config)
+        for key in conf_dict:
+            if "key" in key or "secret" in key:
+                if isinstance(key, str):
+                    conf_dict[key] = conf_dict[key][0:3] + "*" * 5 + conf_dict[key][-3:]
+        return json.dumps(conf_dict, indent=4)
+    elif isinstance(config, dict):
+        for key in config:
+            if "key" in key or "secret" in key:
+                if isinstance(key, str):
+                    config[key] = config[key][0:3] + "*" * 5 + config[key][-3:]
+        return config
+
+    return config
 
 
 def load_config():
