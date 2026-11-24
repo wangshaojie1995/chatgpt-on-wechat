@@ -1,3 +1,4 @@
+import os
 import shutil
 import wave
 
@@ -6,9 +7,15 @@ from common.log import logger
 try:
     import pysilk
 except ImportError:
-    logger.debug("import pysilk failed, wechaty voice message will not be supported.")
+    logger.debug("import pysilk failed, silk voice format will not be supported.")
 
-from pydub import AudioSegment
+try:
+    from pydub import AudioSegment
+    _pydub_available = True
+except ImportError:
+    logger.debug("import pydub failed, voice conversion features will not be supported.")
+    AudioSegment = None
+    _pydub_available = False
 
 sil_supports = [8000, 12000, 16000, 24000, 32000, 44100, 48000]  # slk转wav时，支持的采样率
 
@@ -36,36 +43,54 @@ def get_pcm_from_wav(wav_path):
     :param wav_path: wav 文件路径
     :returns: pcm 数据
     """
-    wav = wave.open(wav_path, "rb")
-    return wav.readframes(wav.getnframes())
+    with wave.open(wav_path, "rb") as wav:
+        return wav.readframes(wav.getnframes())
 
 
 def any_to_mp3(any_path, mp3_path):
     """
     把任意格式转成mp3文件
     """
+    if not _pydub_available:
+        raise ImportError("pydub is required for audio conversion. Please install it with: pip install pydub")
     if any_path.endswith(".mp3"):
         shutil.copy2(any_path, mp3_path)
         return
+    sil_wav_path = None
     if any_path.endswith(".sil") or any_path.endswith(".silk") or any_path.endswith(".slk"):
-        sil_to_wav(any_path, any_path)
-        any_path = mp3_path
-    audio = AudioSegment.from_file(any_path)
-    audio.export(mp3_path, format="mp3")
+        # pysilk decodes silk into wav only, so the audio needs a wav file of
+        # its own: decoding onto any_path overwrote the caller's voice file and
+        # then left nothing at mp3_path to read.
+        sil_wav_path = os.path.splitext(any_path)[0] + ".silk.wav"
+        sil_to_wav(any_path, sil_wav_path)
+        any_path = sil_wav_path
+    try:
+        audio = AudioSegment.from_file(any_path)
+        audio.export(mp3_path, format="mp3")
+    finally:
+        if sil_wav_path and os.path.exists(sil_wav_path):
+            os.remove(sil_wav_path)
 
 
 def any_to_wav(any_path, wav_path):
     """
     把任意格式转成wav文件
     """
+    if not _pydub_available:
+        raise ImportError("pydub is required for audio conversion. Please install it with: pip install pydub")
     if any_path.endswith(".wav"):
         shutil.copy2(any_path, wav_path)
         return
     if any_path.endswith(".sil") or any_path.endswith(".silk") or any_path.endswith(".slk"):
         return sil_to_wav(any_path, wav_path)
-    audio = AudioSegment.from_file(any_path)
-    audio.set_frame_rate(8000)    # 百度语音转写支持8000采样率, pcm_s16le, 单通道语音识别
-    audio.set_channels(1)
+    # pydub 0.23.0+ 会将 parameters 追加到 ffmpeg 命令的输出文件 `-` 之后，
+    # 因此 -nostdin 可能被当作"尾部选项"处理，是否生效取决于 ffmpeg 版本。
+    # 目的是防止后台服务中 ffmpeg 子进程继承父进程的 stdin，避免死锁。
+    audio = AudioSegment.from_file(any_path, parameters=["-nostdin"])
+    # AudioSegment 是不可变对象：set_frame_rate/set_channels 返回新对象，不修改原对象。
+    # 必须将返回值重新赋给 audio，否则修改不会生效。
+    audio = audio.set_frame_rate(16000)
+    audio = audio.set_channels(1)
     audio.export(wav_path, format="wav", codec='pcm_s16le')
 
 
@@ -73,6 +98,8 @@ def any_to_sil(any_path, sil_path):
     """
     把任意格式转成sil文件
     """
+    if not _pydub_available:
+        raise ImportError("pydub is required for audio conversion. Please install it with: pip install pydub")
     if any_path.endswith(".sil") or any_path.endswith(".silk") or any_path.endswith(".slk"):
         shutil.copy2(any_path, sil_path)
         return 10000
@@ -92,6 +119,8 @@ def any_to_amr(any_path, amr_path):
     """
     把任意格式转成amr文件
     """
+    if not _pydub_available:
+        raise ImportError("pydub is required for audio conversion. Please install it with: pip install pydub")
     if any_path.endswith(".amr"):
         shutil.copy2(any_path, amr_path)
         return
@@ -116,6 +145,8 @@ def split_audio(file_path, max_segment_length_ms=60000):
     """
     分割音频文件
     """
+    if not _pydub_available:
+        raise ImportError("pydub is required for audio conversion. Please install it with: pip install pydub")
     audio = AudioSegment.from_file(file_path)
     audio_length_ms = len(audio)
     if audio_length_ms <= max_segment_length_ms:

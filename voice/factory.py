@@ -50,4 +50,38 @@ def create_voice(voice_type):
         from voice.xunfei.xunfei_voice import XunfeiVoice
 
         return XunfeiVoice()
+    elif voice_type == "tencent":
+        from voice.tencent.tencent_voice import TencentVoice
+
+        return TencentVoice()
+    elif voice_type == "minimax":
+        from voice.minimax.minimax_voice import MinimaxVoice
+
+        return MinimaxVoice()
+    elif voice_type == "dashscope":
+        from voice.dashscope.dashscope_voice import DashScopeVoice
+
+        return DashScopeVoice()
+    elif voice_type == "zhipu" or voice_type == "zhipuai":
+        from voice.zhipuai.zhipuai_voice import ZhipuAIVoice
+
+        return ZhipuAIVoice()
+    elif voice_type == "mimo":
+        from voice.mimo.mimo_voice import MimoVoice
+
+        return MimoVoice()
+    elif voice_type == "deepseek":
+        from voice.deepseek.deepseek_voice import DeepSeekVoice
+
+        return DeepSeekVoice()
+    elif voice_type == "custom" or voice_type.startswith("custom:"):
+        # User-created OpenAI-compatible vendors (custom_providers); the id
+        # suffix selects which vendor's credentials/endpoint to use.
+        from voice.custom.custom_voice import CustomVoice
+
+        return CustomVoice(voice_type)
+    elif voice_type == "cowagent":
+        from voice.cowagent.cowagent_voice import CowAgentVoice
+
+        return CowAgentVoice()
     raise RuntimeError

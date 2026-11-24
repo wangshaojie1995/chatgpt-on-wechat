@@ -1,16 +1,20 @@
-"""
-google voice service
-"""
+"""LinkAI voice: Whisper ASR + multi-vendor TTS (OpenAI / Doubao / Baidu)
+proxied via https://docs.link-ai.tech/platform/api/voice-speech."""
+import datetime
+import os
 import random
+
 import requests
-from voice import audio_convert
+
 from bridge.reply import Reply, ReplyType
 from common.log import logger
+from common.media_download import MAX_FILE_BYTES, MediaTooLargeError, save_response
+from common.tmp_dir import TmpDir
+from common.utils import apply_client_source, apply_cloud_user
 from config import conf
+from voice import audio_convert
 from voice.voice import Voice
-from common import const
-import os
-import datetime
+
 
 class LinkAIVoice(Voice):
     def __init__(self):
@@ -21,63 +25,89 @@ class LinkAIVoice(Voice):
         try:
             url = conf().get("linkai_api_base", "https://api.link-ai.tech") + "/v1/audio/transcriptions"
             headers = {"Authorization": "Bearer " + conf().get("linkai_api_key")}
-            model = None
-            if not conf().get("text_to_voice") or conf().get("voice_to_text") == "openai":
-                model = const.WHISPER_1
-            if voice_file.endswith(".amr"):
+            apply_client_source(headers)
+            apply_cloud_user(headers)
+            # Gateway routes ASR by `model` (whisper-1 / doubao / baidu). An
+            # empty value means "use the gateway's default engine", so only
+            # forward `model` when the user actually configured one.
+            model = (conf().get("voice_to_text_model") or "").strip()
+            # Some engines only accept amr/mp3/wav/m4a; WeChat voice notes arrive
+            # as .silk/.slk, so normalise the extension before deciding.
+            lower = voice_file.lower()
+            if lower.endswith(".amr") or lower.endswith(".silk") or lower.endswith(".slk"):
                 try:
                     mp3_file = os.path.splitext(voice_file)[0] + ".mp3"
                     audio_convert.any_to_mp3(voice_file, mp3_file)
                     voice_file = mp3_file
                 except Exception as e:
-                    logger.warn(f"[LinkVoice] amr file transfer failed, directly send amr voice file: {format(e)}")
-            file = open(voice_file, "rb")
-            file_body = {
-                "file": file
-            }
-            data = {
-                "model": model
-            }
-            res = requests.post(url, files=file_body, headers=headers, data=data, timeout=(5, 60))
-            if res.status_code == 200:
-                text = res.json().get("text")
-            else:
-                res_json = res.json()
-                logger.error(f"[LinkVoice] voiceToText error, status_code={res.status_code}, msg={res_json.get('message')}")
-                return None
-            reply = Reply(ReplyType.TEXT, text)
+                    logger.warning(f"[LinkVoice] voice file transfer failed, directly send voice file: {e}")
+            data = {"model": model} if model else {}
+            with open(voice_file, "rb") as file:
+                res = requests.post(
+                    url,
+                    files={"file": file},
+                    headers=headers,
+                    data=data,
+                    timeout=(5, 60),
+                )
+            if res.status_code != 200:
+                msg = ""
+                try:
+                    msg = res.json().get("message", "")
+                except Exception:
+                    pass
+                logger.error(f"[LinkVoice] voiceToText error, status_code={res.status_code}, msg={msg}")
+                return Reply(ReplyType.ERROR, "抱歉，语音识别失败")
+            text = res.json().get("text")
+            # A gateway can answer 200 with a body that carries no transcript
+            # (quota exhausted, engine-side soft failure). Shape the value
+            # before handing it on: the ASR contract in this repo is TEXT only
+            # for a string, ERROR otherwise (cf. openai_voice.py).
+            if not isinstance(text, str):
+                logger.error(f"[LinkVoice] voiceToText failed: text is not a string: {text!r}")
+                return Reply(ReplyType.ERROR, "抱歉，语音识别失败")
             logger.info(f"[LinkVoice] voiceToText success, text={text}, file name={voice_file}")
+            return Reply(ReplyType.TEXT, text)
         except Exception as e:
             logger.error(e)
-            return None
-        return reply
+            return Reply(ReplyType.ERROR, "抱歉，语音识别失败")
 
     def textToVoice(self, text):
         try:
             url = conf().get("linkai_api_base", "https://api.link-ai.tech") + "/v1/audio/speech"
             headers = {"Authorization": "Bearer " + conf().get("linkai_api_key")}
-            model = const.TTS_1
-            if not conf().get("text_to_voice") or conf().get("text_to_voice") in ["openai", const.TTS_1, const.TTS_1_HD]:
-                model = conf().get("text_to_voice_model") or const.TTS_1
+            apply_client_source(headers)
+            apply_cloud_user(headers)
+            # Gateway routes by `model` (tts-1 / doubao / baidu) + `voice` from
+            # that engine's catalog. `app_code` is optional workspace override.
             data = {
-                "model": model,
                 "input": text,
                 "voice": conf().get("tts_voice_id"),
-                "app_code": conf().get("linkai_app_code")
+                "app_code": conf().get("linkai_app_code"),
             }
-            res = requests.post(url, headers=headers, json=data, timeout=(5, 120))
-            if res.status_code == 200:
-                tmp_file_name = "tmp/" + datetime.datetime.now().strftime('%Y%m%d%H%M%S') + str(random.randint(0, 1000)) + ".mp3"
-                with open(tmp_file_name, 'wb') as f:
-                    f.write(res.content)
-                reply = Reply(ReplyType.VOICE, tmp_file_name)
-                logger.info(f"[LinkVoice] textToVoice success, input={text}, model={model}, voice_id={data.get('voice')}")
-                return reply
-            else:
-                res_json = res.json()
-                logger.error(f"[LinkVoice] textToVoice error, status_code={res.status_code}, msg={res_json.get('message')}")
-                return None
+            model = conf().get("text_to_voice_model")
+            if model:
+                data["model"] = model
+            res = requests.post(url, headers=headers, json=data, timeout=(5, 120), stream=True)
+            if res.status_code != 200:
+                msg = ""
+                try:
+                    msg = res.json().get("message", "")
+                except Exception:
+                    pass
+                logger.error(f"[LinkVoice] textToVoice error, status_code={res.status_code}, msg={msg}")
+                res.close()
+                return Reply(ReplyType.ERROR, "抱歉，语音合成失败")
+            tmp_file_name = TmpDir().path() + datetime.datetime.now().strftime('%Y%m%d%H%M%S') + str(random.randint(0, 1000)) + ".mp3"
+            try:
+                save_response(res, tmp_file_name, MAX_FILE_BYTES)
+            except MediaTooLargeError:
+                logger.error(
+                    f"[LinkVoice] textToVoice audio too large: over {MAX_FILE_BYTES} bytes"
+                )
+                return Reply(ReplyType.ERROR, "抱歉，语音合成失败")
+            logger.info(f"[LinkVoice] textToVoice success, input={text}, voice_id={data.get('voice')}")
+            return Reply(ReplyType.VOICE, tmp_file_name)
         except Exception as e:
             logger.error(e)
-            # reply = Reply(ReplyType.ERROR, "遇到了一点小问题，请稍后再问我吧")
-            return None
+            return Reply(ReplyType.ERROR, "抱歉，语音合成失败")

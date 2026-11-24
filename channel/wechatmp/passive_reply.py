@@ -3,7 +3,7 @@ import time
 
 import web
 from wechatpy import parse_message
-from wechatpy.replies import ImageReply, VoiceReply, create_reply
+from wechatpy.replies import ImageReply, VideoReply, VoiceReply, create_reply
 import textwrap
 from bridge.context import *
 from bridge.reply import *
@@ -31,13 +31,13 @@ class Query:
             if args.get("encrypt_type") == "aes":
                 logger.debug("[wechatmp] Receive encrypted post data:\n" + message.decode("utf-8"))
                 if not channel.crypto:
-                    raise Exception("Crypto not initialized, Please set wechatmp_aes_key in config.json")
+                    raise RuntimeError("Crypto not initialized, Please set wechatmp_aes_key in config.json")
                 message = channel.crypto.decrypt_message(message, args.msg_signature, args.timestamp, args.nonce)
                 encrypt_func = lambda x: channel.crypto.encrypt_message(x, args.nonce, args.timestamp)
             else:
                 logger.debug("[wechatmp] Receive post data:\n" + message.decode("utf-8"))
             msg = parse_message(message)
-            if msg.type in ["text", "voice", "image"]:
+            if msg.type in WeChatMPMessage.SUPPORTED_TYPES:
                 wechatmp_msg = WeChatMPMessage(msg, client=channel.client)
                 from_user = wechatmp_msg.from_user_id
                 content = wechatmp_msg.content
@@ -81,7 +81,7 @@ class Query:
                                     请跟我说话吧。"""
                                 )
                         else:
-                            logger.error(f"[wechatmp] unknown error")
+                            logger.error("[wechatmp] unknown error")
                             reply_text = textwrap.dedent(
                                 """\
                                 未知错误，请稍后再试"""
@@ -103,14 +103,21 @@ class Query:
                 task_running = True
                 waiting_until = request_time + 4
                 while time.time() < waiting_until:
-                    if from_user in channel.running:
-                        time.sleep(0.1)
-                    else:
+                    if from_user not in channel.running:
                         task_running = False
                         break
+                    # Task still running, but if it has already produced cached
+                    # segments (e.g. multi-turn thinking output), return them now
+                    # instead of forcing the user to wait for the whole task. The
+                    # remaining segments are fetched by the user's next message.
+                    if channel.cache_dict.get(from_user):
+                        break
+                    time.sleep(0.1)
 
                 reply_text = ""
-                if task_running:
+                # Only fall back to retry / "thinking" hint when the task is still
+                # running AND there is nothing cached to send yet.
+                if task_running and not channel.cache_dict.get(from_user):
                     if request_cnt < 3:
                         # waiting for timeout (the POST request will be closed by Wechat official server)
                         time.sleep(2)
@@ -131,8 +138,26 @@ class Query:
 
                 # Only one request can access to the cached data
                 try:
-                    (reply_type, reply_content) = channel.cache_dict[from_user].pop(0)
-                    if not channel.cache_dict[from_user]:  # If popping the message makes the list empty, delete the user entry from cache
+                    # WeChat passive reply allows only a single reply per request.
+                    # To avoid forcing the user to send an extra message for every
+                    # segment of multi-turn agent output, drain all consecutive
+                    # cached text segments at once and merge them into one reply.
+                    # Media (voice/image) can only be returned one at a time, so it
+                    # stops the merge and is returned on its own.
+                    # Use .get: indexing the defaultdict would insert an empty entry that
+                    # blocks this user from starting a new task.
+                    cached = channel.cache_dict.get(from_user)
+                    if not cached:
+                        return "success"
+                    if cached[0][0] == "text":
+                        reply_type = "text"
+                        merged_parts = []
+                        while cached and cached[0][0] == "text":
+                            merged_parts.append(cached.pop(0)[1])
+                        reply_content = "\n\n".join(merged_parts)
+                    else:
+                        (reply_type, reply_content) = cached.pop(0)
+                    if not cached:  # If draining empties the list, delete the user entry from cache
                         del channel.cache_dict[from_user]
                 except IndexError:
                     return "success"
@@ -194,6 +219,39 @@ class Query:
                     replyPost.media_id = media_id
                     return encrypt_func(replyPost.render())
 
+                elif reply_type == "video":
+                    media_id = reply_content
+                    asyncio.run_coroutine_threadsafe(channel.delete_media(media_id), channel.delete_media_loop)
+                    logger.info(
+                        "[wechatmp] Request {} do send to {} {}: {} video media_id {}".format(
+                            request_cnt,
+                            from_user,
+                            message_id,
+                            content,
+                            media_id,
+                        )
+                    )
+                    replyPost = VideoReply(message=msg)
+                    replyPost.media_id = media_id
+                    return encrypt_func(replyPost.render())
+
+                else:
+                    # A segment no branch above can render was still uploaded to
+                    # the permanent material store, so it has to be released
+                    # here rather than left behind for good.
+                    logger.warning(
+                        "[wechatmp] Request {} cannot render cached reply type {} from {}, dropping it".format(
+                            request_cnt,
+                            reply_type,
+                            from_user,
+                        )
+                    )
+                    if reply_type != "text" and reply_content:
+                        asyncio.run_coroutine_threadsafe(
+                            channel.delete_media(reply_content), channel.delete_media_loop
+                        )
+                    return "success"
+
             elif msg.type == "event":
                 logger.info("[wechatmp] Event {} from {}".format(msg.event, msg.source))
                 if msg.event in ["subscribe", "subscribe_scan"]:
@@ -204,7 +262,10 @@ class Query:
                 else:
                     return "success"
             else:
-                logger.info("暂且不处理")
+                logger.info(
+                    f"[wechatmp] unsupported message type {msg.type!r} from "
+                    f"{getattr(msg, 'source', '?')}, ignored"
+                )
             return "success"
         except Exception as exc:
             logger.exception(exc)

@@ -1,204 +1,239 @@
-import sys
-import time
+"""The console's URL table.
+
+Every route the web console answers on, and the web.py application built
+from it. The handlers themselves live in api/, one module per view, and the
+plumbing they share lives in core/ -- see channel/web/README.md.
+
+This module imports every handler because build_app() resolves the names in
+URLS against this module's globals; see build_app at the bottom.
+"""
+
 import web
-import json
-from queue import Queue
-from bridge.context import *
-from bridge.reply import Reply, ReplyType
-from channel.chat_channel import ChatChannel, check_prefix
-from channel.chat_message import ChatMessage
-from common.log import logger
-from common.singleton import singleton
-from config import conf
-import os
+
+from channel.web.api.agents import (  # noqa: F401
+    AgentAvatarHandler, AgentCoreFileHandler, AgentsHandler,
+)
+from channel.web.api.artifacts import (  # noqa: F401
+    ArtifactAddHandler, ArtifactDeleteHandler, ArtifactPinHandler,
+    ArtifactRenameHandler, ArtifactsHandler,
+)
+from channel.web.api.auth import (  # noqa: F401
+    AuthCheckHandler, AuthLoginHandler, AuthLogoutHandler,
+    McpOAuthCallbackHandler,
+)
+from channel.web.api.channels import (  # noqa: F401
+    ChannelsHandler, FeishuRegisterHandler, WeixinQrHandler,
+)
+from channel.web.api.chat import (  # noqa: F401
+    CancelHandler, MessageHandler, PollHandler, StreamHandler,
+)
+from channel.web.api.config import ConfigHandler, ExternalApiHandler  # noqa: F401
+from channel.web.api.bash_settings import BashSettingsHandler  # noqa: F401
+from channel.web.api.devices import (  # noqa: F401
+    AuthPairHandler, DeviceHandler, DeviceSelfHandler, DevicesHandler, DevicesRevokeOthersHandler,
+    PairingHandler, PairingStatusHandler, WellKnownHandler,
+)
+from channel.web.api.files import (  # noqa: F401
+    FileRevealHandler, FileServeHandler, PreviewHandler, UploadHandler, UploadsHandler,
+    VoiceAsrHandler, VoiceTtsHandler,
+)
+from channel.web.api.guest import (  # noqa: F401
+    GUEST_URLS, GuestCancelHandler, GuestClearHandler, GuestConversationHandler,
+    GuestConversationsHandler, GuestFileHandler, GuestHistoryHandler,
+    GuestInfoHandler, GuestLogoHandler, GuestMessageHandler, GuestPageHandler,
+    GuestSessionHandler, GuestShareActionHandler, GuestShareHandler,
+    GuestShareLogoHandler, GuestShareLogHandler,
+    GuestShareLogsHandler, GuestSharesHandler, GuestStreamHandler,
+    GuestUploadHandler, GuestVoiceHandler,
+)
+from channel.web.api.integrations import IntegrationsHandler  # noqa: F401
+from channel.web.api.knowledge import (  # noqa: F401
+    KnowledgeActionHandler, KnowledgeGraphHandler, KnowledgeImportHandler,
+    KnowledgeListHandler, KnowledgeReadHandler,
+)
+from channel.web.api.logs import LogsDownloadHandler, LogsHandler  # noqa: F401
+from channel.web.api.memory import (  # noqa: F401
+    MemoryContentHandler, MemoryHandler,
+)
+from channel.web.api.menu import MenuHandler  # noqa: F401
+from channel.web.api.models import ModelsHandler  # noqa: F401
+from channel.web.api.openai_compat import (  # noqa: F401
+    OpenAIChatCompletionsHandler, OpenAIModelsHandler,
+)
+from channel.web.api.pages import (  # noqa: F401
+    AssetsHandler, ChatHandler, HealthHandler, InstanceWorkerHandler, RootHandler,
+)
+from channel.web.api.phone import PHONE_URLS, PhoneAnswerHandler, PhonePollHandler  # noqa: F401
+from channel.web.api.scheduler import (  # noqa: F401
+    SchedulerCreateHandler, SchedulerDeleteHandler, SchedulerHandler,
+    SchedulerInstancesHandler, SchedulerRecipientsHandler,
+    SchedulerRunDeleteHandler, SchedulerRunDetailHandler, SchedulerRunHandler,
+    SchedulerRunsHandler, SchedulerToggleHandler, SchedulerUpcomingHandler, SchedulerUpdateHandler,
+)
+from channel.web.api.sessions import (  # noqa: F401
+    HistoryHandler, MessageDeleteHandler, PromptOptimizeHandler,
+    SessionClearContextHandler, SessionCompactContextHandler,
+    SessionContextUsageHandler, SessionDetailHandler, SessionSettingsHandler,
+    SessionTitleHandler, SessionsHandler, UserMessagesHandler,
+)
+from channel.web.api.skills import (  # noqa: F401
+    McpServerTestHandler, McpServersHandler,
+    SkillContentHandler, SkillCreateHandler, SkillFilesHandler,
+    SkillsHandler, SkillUploadHandler, ToolsHandler,
+    _install_skill_for_agent,
+)
+from channel.web.api.themes import (  # noqa: F401
+    ThemeAssetHandler, ThemeImportHandler, ThemesHandler,
+)
+from channel.web.api.update import (  # noqa: F401
+    UpdateCheckHandler, UpdateStartHandler, UpdateStatusHandler, VersionHandler,
+)
+from channel.web.api.workspace import (  # noqa: F401
+    ProjectBrowseHandler, ProjectCreateHandler, ProjectManageHandler,
+    ProjectOrderHandler, ProjectSelectHandler, ProjectsHandler,
+    WorkspaceMetaHandler, WorkspaceReadHandler, WorkspaceResolveHandler,
+    WorkspaceSearchHandler, WorkspaceTreeHandler, WorkspaceWriteHandler,
+)
+# Re-exported, not used here. app.py waits on SERVING and channel_factory
+# resolves "channel.web.web_channel.WebChannel" by name, so both have to stay
+# reachable through this module; the tests reach for the rest.
+from channel.web.core._common import (  # noqa: F401
+    SERVING, SSEStreamState, WebMessage,
+)
+from channel.web.core.channel import WebChannel  # noqa: F401
 
 
-class WebMessage(ChatMessage):
-    def __init__(
-        self,
-        msg_id,
-        content,
-        ctype=ContextType.TEXT,
-        from_user_id="User",
-        to_user_id="Chatgpt",
-        other_user_id="Chatgpt",
-    ):
-        self.msg_id = msg_id
-        self.ctype = ctype
-        self.content = content
-        self.from_user_id = from_user_id
-        self.to_user_id = to_user_id
-        self.other_user_id = other_user_id
+URLS = (
+    '/', 'ChatHandler',
+    '/chat', 'RootHandler',
+    '/api/health', 'HealthHandler',
+    # Guest share visitor pages (/share/<token>) and the owner's share API.
+    *GUEST_URLS,
+    '/api/integrations', 'IntegrationsHandler',
+    '/api/tools/bash/settings', 'BashSettingsHandler',
+    '/auth/login', 'AuthLoginHandler',
+    '/auth/check', 'AuthCheckHandler',
+    '/auth/logout', 'AuthLogoutHandler',
+    '/auth/pair', 'AuthPairHandler',
+    '/.well-known/cowagent', 'WellKnownHandler',
+    '/api/pairing', 'PairingHandler',
+    '/api/pairing/(p_[0-9a-f]+)', 'PairingStatusHandler',
+    '/api/devices', 'DevicesHandler',
+    '/api/device', 'DeviceSelfHandler',
+    '/api/devices/revoke_others', 'DevicesRevokeOthersHandler',
+    '/api/devices/(d_[0-9a-f]+)', 'DeviceHandler',
+    '/instance-sw.js', 'InstanceWorkerHandler',
+    '/message', 'MessageHandler',
+    '/upload', 'UploadHandler',
+    '/uploads/(.*)', 'UploadsHandler',
+    '/api/file/reveal', 'FileRevealHandler',
+    '/api/file', 'FileServeHandler',
+    '/preview/(.+)', 'PreviewHandler',
+    '/api/workspace/tree', 'WorkspaceTreeHandler',
+    '/api/workspace/search', 'WorkspaceSearchHandler',
+    '/api/workspace/resolve', 'WorkspaceResolveHandler',
+    '/api/workspace/meta', 'WorkspaceMetaHandler',
+    '/api/workspace/read', 'WorkspaceReadHandler',
+    '/api/workspace/write', 'WorkspaceWriteHandler',
+    '/api/artifacts/add', 'ArtifactAddHandler',
+    '/api/artifacts/pin', 'ArtifactPinHandler',
+    '/api/artifacts/rename', 'ArtifactRenameHandler',
+    '/api/menu', 'MenuHandler',
+    '/api/themes', 'ThemesHandler',
+    '/api/themes/asset', 'ThemeAssetHandler',
+    '/api/themes/import', 'ThemeImportHandler',
+    '/api/artifacts/delete', 'ArtifactDeleteHandler',
+    '/api/artifacts', 'ArtifactsHandler',
+    '/api/projects', 'ProjectsHandler',
+    '/api/projects/select', 'ProjectSelectHandler',
+    '/api/projects/create', 'ProjectCreateHandler',
+    '/api/projects/browse', 'ProjectBrowseHandler',
+    '/api/projects/order', 'ProjectOrderHandler',
+    '/api/projects/manage', 'ProjectManageHandler',
+    '/api/voice/asr', 'VoiceAsrHandler',
+    '/api/voice/tts', 'VoiceTtsHandler',
+    '/poll', 'PollHandler',
+    '/stream', 'StreamHandler',
+    '/cancel', 'CancelHandler',
+    '/v1/chat/completions', 'OpenAIChatCompletionsHandler',
+    '/v1/models', 'OpenAIModelsHandler',
+    '/config', 'ConfigHandler',
+    '/api/external_api', 'ExternalApiHandler',
+    '/api/models', 'ModelsHandler',
+    '/api/channels', 'ChannelsHandler',
+    '/api/weixin/qrlogin', 'WeixinQrHandler',
+    '/api/feishu/register', 'FeishuRegisterHandler',
+    '/api/tools', 'ToolsHandler',
+    *PHONE_URLS,
+    '/api/mcp/servers', 'McpServersHandler',
+    '/api/mcp/servers/test', 'McpServerTestHandler',
+    '/api/skills', 'SkillsHandler',
+    '/api/skills/content', 'SkillContentHandler',
+    '/api/skills/files', 'SkillFilesHandler',
+    '/api/skills/create', 'SkillCreateHandler',
+    '/api/skills/upload', 'SkillUploadHandler',
+    '/api/memory', 'MemoryHandler',
+    '/api/memory/content', 'MemoryContentHandler',
+    '/api/knowledge/list', 'KnowledgeListHandler',
+    '/api/knowledge/read', 'KnowledgeReadHandler',
+    '/api/knowledge/graph', 'KnowledgeGraphHandler',
+    '/api/knowledge/action', 'KnowledgeActionHandler',
+    '/api/knowledge/import', 'KnowledgeImportHandler',
+    '/api/scheduler', 'SchedulerHandler',
+    '/api/scheduler/runs/detail', 'SchedulerRunDetailHandler',
+    '/api/scheduler/runs/delete', 'SchedulerRunDeleteHandler',
+    '/api/scheduler/runs', 'SchedulerRunsHandler',
+    '/api/scheduler/upcoming', 'SchedulerUpcomingHandler',
+    '/api/scheduler/run', 'SchedulerRunHandler',
+    '/api/scheduler/toggle', 'SchedulerToggleHandler',
+    '/api/scheduler/update', 'SchedulerUpdateHandler',
+    '/api/scheduler/delete', 'SchedulerDeleteHandler',
+    '/api/scheduler/create', 'SchedulerCreateHandler',
+    '/api/scheduler/recipients', 'SchedulerRecipientsHandler',
+    '/api/scheduler/instances', 'SchedulerInstancesHandler',
+    '/api/agents', 'AgentsHandler',
+    '/api/agents/([^/]+)/avatar', 'AgentAvatarHandler',
+    '/api/agents/([^/]+)/files/([^/]+)', 'AgentCoreFileHandler',
+    '/api/sessions', 'SessionsHandler',
+    '/api/sessions/(.*)/generate_title', 'SessionTitleHandler',
+    '/api/prompt/optimize', 'PromptOptimizeHandler',
+    '/api/sessions/(.*)/clear_context', 'SessionClearContextHandler',
+    '/api/sessions/(.*)/context_usage', 'SessionContextUsageHandler',
+    '/api/sessions/(.*)/compact_context', 'SessionCompactContextHandler',
+    '/api/sessions/(.*)/settings', 'SessionSettingsHandler',
+    '/api/sessions/(.*)', 'SessionDetailHandler',
+    '/api/history/user_messages', 'UserMessagesHandler',
+    '/api/history', 'HistoryHandler',
+    '/api/messages/delete', 'MessageDeleteHandler',
+    '/api/logs/download', 'LogsDownloadHandler',
+    '/api/logs', 'LogsHandler',
+    '/api/version', 'VersionHandler',
+    '/api/update/check', 'UpdateCheckHandler',
+    '/api/update/start', 'UpdateStartHandler',
+    '/api/update/status', 'UpdateStatusHandler',
+    '/mcp/oauth/callback', 'McpOAuthCallbackHandler',
+    '/assets/(.*)', 'AssetsHandler',
+    # Views inside the single-page console. Each serves the same shell;
+    # the frontend router reads the path and opens the view it names,
+    # so a reload or a shared link lands where it says. Last in the
+    # table on purpose: web.py takes the first match, so no view name
+    # can ever shadow an API route above -- which is also why the
+    # settings view is /settings and not /config, a path the config
+    # API already owns.
+    '/(?:agents|artifacts|settings|skills|memory|knowledge|channels|scheduler|logs)'
+    '(?:/[a-z]+)?/?', 'ChatHandler',
+    # A page the user put in the menu: /m/<item id>.
+    '/m/[A-Za-z0-9_-]{1,40}/?', 'ChatHandler',
+)
 
 
-@singleton
-class WebChannel(ChatChannel):
-    NOT_SUPPORT_REPLYTYPE = [ReplyType.VOICE]
-    _instance = None
-    
-    # def __new__(cls):
-    #     if cls._instance is None:
-    #         cls._instance = super(WebChannel, cls).__new__(cls)
-    #     return cls._instance
+def build_app():
+    """The web.py application, built against this module's namespace.
 
-    def __init__(self):
-        super().__init__()
-        self.message_queues = {}  # 为每个用户存储一个消息队列
-        self.msg_id_counter = 0  # 添加消息ID计数器
-
-    def _generate_msg_id(self):
-        """生成唯一的消息ID"""
-        self.msg_id_counter += 1
-        return str(int(time.time())) + str(self.msg_id_counter)
-
-    def send(self, reply: Reply, context: Context):
-        try:
-            if reply.type == ReplyType.IMAGE:
-                from PIL import Image
-
-                image_storage = reply.content
-                image_storage.seek(0)
-                img = Image.open(image_storage)
-                print("<IMAGE>")
-                img.show()
-            elif reply.type == ReplyType.IMAGE_URL:
-                import io
-
-                import requests
-                from PIL import Image
-
-                img_url = reply.content
-                pic_res = requests.get(img_url, stream=True)
-                image_storage = io.BytesIO()
-                for block in pic_res.iter_content(1024):
-                    image_storage.write(block)
-                image_storage.seek(0)
-                img = Image.open(image_storage)
-                print(img_url)
-                img.show()
-            else:
-                print(reply.content)
-
-            # 获取用户ID，如果没有则使用默认值
-            # user_id = getattr(context.get("session", None), "session_id", "default_user")
-            user_id = context["receiver"]
-            # 确保用户有对应的消息队列
-            if user_id not in self.message_queues:
-                self.message_queues[user_id] = Queue()
-                
-            # 将消息放入对应用户的队列
-            message_data = {
-                "type": str(reply.type),
-                "content": reply.content,
-                "timestamp": time.time()
-            }
-            self.message_queues[user_id].put(message_data)
-            logger.debug(f"Message queued for user {user_id}")
-            
-        except Exception as e:
-            logger.error(f"Error in send method: {e}")
-            raise
-
-    def sse_handler(self, user_id):
-        """
-        Handle Server-Sent Events (SSE) for real-time communication.
-        """
-        web.header('Content-Type', 'text/event-stream')
-        web.header('Cache-Control', 'no-cache')
-        web.header('Connection', 'keep-alive')
-        
-        # 确保用户有消息队列
-        if user_id not in self.message_queues:
-            self.message_queues[user_id] = Queue()
-        
-        try:    
-            while True:
-                try:
-                    # 发送心跳
-                    yield f": heartbeat\n\n"
-                    
-                    # 非阻塞方式获取消息
-                    if not self.message_queues[user_id].empty():
-                        message = self.message_queues[user_id].get_nowait()
-                        yield f"data: {json.dumps(message)}\n\n"
-                    time.sleep(0.5)
-                except Exception as e:
-                    logger.error(f"SSE Error: {e}")
-                    break
-        finally:
-            # 清理资源
-            if user_id in self.message_queues:
-                # 只有当队列为空时才删除
-                if self.message_queues[user_id].empty():
-                    del self.message_queues[user_id]
-
-    def post_message(self):
-        """
-        Handle incoming messages from users via POST request.
-        """
-        try:
-            data = web.data()  # 获取原始POST数据
-            json_data = json.loads(data)
-            user_id = json_data.get('user_id', 'default_user')
-            prompt = json_data.get('message', '')
-        except json.JSONDecodeError:
-            return json.dumps({"status": "error", "message": "Invalid JSON"})
-        except Exception as e:
-            return json.dumps({"status": "error", "message": str(e)})
-        
-        if not prompt:
-            return json.dumps({"status": "error", "message": "No message provided"})
-            
-        try:
-            msg_id = self._generate_msg_id()
-            context = self._compose_context(ContextType.TEXT, prompt, msg=WebMessage(msg_id, 
-                                                                                     prompt,
-                                                                                     from_user_id=user_id,
-                                                                                     other_user_id = user_id
-                                                                                     ))
-            context["isgroup"] = False
-            # context["session"] = web.storage(session_id=user_id)
-            
-            if not context:
-                return json.dumps({"status": "error", "message": "Failed to process message"})
-                
-            self.produce(context)
-            return json.dumps({"status": "success", "message": "Message received"})
-            
-        except Exception as e:
-            logger.error(f"Error processing message: {e}")
-            return json.dumps({"status": "error", "message": "Internal server error"})
-
-    def chat_page(self):
-        """Serve the chat HTML page."""
-        file_path = os.path.join(os.path.dirname(__file__), 'chat.html')  # 使用绝对路径
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
-
-    def startup(self):
-        logger.setLevel("WARN")
-        print("\nWeb Channel is running, please visit http://localhost:9899/chat")
-        
-        urls = (
-            '/sse/(.+)', 'SSEHandler',  # 修改路由以接收用户ID
-            '/message', 'MessageHandler',
-            '/chat', 'ChatHandler', 
-        )
-        port = conf().get("web_port", 9899)
-        app = web.application(urls, globals(), autoreload=False)
-        web.httpserver.runsimple(app.wsgifunc(), ("0.0.0.0", port))
-
-
-class SSEHandler:
-    def GET(self, user_id):
-        return WebChannel().sse_handler(user_id)
-
-
-class MessageHandler:
-    def POST(self):
-        return WebChannel().post_message()
-
-
-class ChatHandler:
-    def GET(self):
-        return WebChannel().chat_page()
+    web.py resolves the handler names in URLS by looking them up in a
+    namespace dict, so the application has to be built where those names are
+    in scope. That is here -- this module imports every handler -- and it is
+    why WebChannel, which only runs the server, asks for the app instead of
+    assembling one.
+    """
+    return web.application(URLS, globals(), autoreload=False)

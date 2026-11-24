@@ -1,5 +1,5 @@
 """
-本类表示聊天消息，用于对itchat和wechaty的消息进行统一的封装。
+Unified chat message class for different channel implementations.
 
 填好必填项(群聊6个，非群聊8个)，即可接入ChatChannel，并支持插件，参考TerminalChannel
 
@@ -31,6 +31,40 @@ _prepared: 是否已经调用过准备函数
 _rawmsg: 原始消息对象
 
 """
+
+
+import os
+import re
+
+
+# Reserved Windows device names, including those with an extension (CON.md).
+# safe_filename already strips illegal punctuation; without this, a WeCom
+# attachment named CON.txt is written as tmp_dir()/CON.txt.
+_WINDOWS_RESERVED_NAME_RE = re.compile(
+    r"^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$",
+    re.IGNORECASE,
+)
+
+
+def safe_filename(name) -> str:
+    """Reduce a server-supplied filename to a single path component.
+
+    Channels hand us a ``file_name`` the sender picked, and every inbound
+    attachment is written to ``tmp_dir()/<file_name>``. A name holding a path
+    separator (``../../etc/x``), a backslash, or an absolute path therefore
+    redirects that write outside the directory the app manages and cleans.
+    Windows reserved device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9),
+    with or without an extension, are also rejected: writing
+    ``tmp_dir()/CON.txt`` succeeds on POSIX and fails or opens a device
+    on Windows. Callers fall back to their own generated name when this
+    returns ``""``.
+    """
+    name = os.path.basename(str(name or "").replace("\\", "/"))
+    name = re.sub(r"[^\w.\- ]+", "_", name).strip(" .")
+    name = name[:180]
+    if _WINDOWS_RESERVED_NAME_RE.match(name):
+        return ""
+    return name
 
 
 class ChatMessage(object):

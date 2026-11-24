@@ -11,8 +11,11 @@ def install(package):
 
 
 def install_requirements(file):
-    pipmain(["install", "-r", file, "--upgrade"])
+    # Return pip's exit status so callers can report a failed install
+    # instead of telling the user it succeeded.
+    result = pipmain(["install", "-r", file, "--upgrade"])
     _reset_logger(logger)
+    return result
 
 
 def check_dulwich():
@@ -28,7 +31,7 @@ def check_dulwich():
         except ImportError:
             try:
                 install("dulwich")
-            except:
+            except Exception:
                 needwait = True
     try:
         import dulwich

@@ -1,6 +1,7 @@
 import os
 import json
-from config import pconf, plugin_config, conf, write_plugin_config
+from config import pconf, plugin_config, conf, write_plugin_config  # noqa: F401  # re-exported via `from .plugin import *`
+from common.atomic_write import write_json_atomic
 from common.log import logger
 
 
@@ -18,14 +19,12 @@ class Plugin:
         if not plugin_conf:
             # 全局配置不存在，则获取插件目录下的配置
             plugin_config_path = os.path.join(self.path, "config.json")
-            logger.debug(f"loading plugin config, plugin_config_path={plugin_config_path}, exist={os.path.exists(plugin_config_path)}")
             if os.path.exists(plugin_config_path):
-                with open(plugin_config_path, "r", encoding="utf-8") as f:
+                with open(plugin_config_path, "r", encoding="utf-8-sig") as f:
                     plugin_conf = json.load(f)
 
                 # 写入全局配置内存
                 write_plugin_config({self.name: plugin_conf})
-        logger.debug(f"loading plugin config, plugin_name={self.name}, conf={plugin_conf}")
         return plugin_conf
 
     def save_config(self, config: dict):
@@ -34,13 +33,11 @@ class Plugin:
             # 写入全局配置
             global_config_path = "./plugins/config.json"
             if os.path.exists(global_config_path):
-                with open(global_config_path, "w", encoding='utf-8') as f:
-                    json.dump(plugin_config, f, indent=4, ensure_ascii=False)
+                write_json_atomic(global_config_path, plugin_config)
             # 写入插件配置
             plugin_config_path = os.path.join(self.path, "config.json")
             if os.path.exists(plugin_config_path):
-                with open(plugin_config_path, "w", encoding='utf-8') as f:
-                    json.dump(config, f, indent=4, ensure_ascii=False)
+                write_json_atomic(plugin_config_path, config)
 
         except Exception as e:
             logger.warn("save plugin config failed: {}".format(e))

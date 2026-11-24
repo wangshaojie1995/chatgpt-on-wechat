@@ -27,9 +27,9 @@
 
 - 第二种方法是`Godcmd`插件，它是预置的管理员插件，能够让程序在运行时就能安装插件，它能够自动安装依赖。
 
-    安装插件的命令是"#installp [仓库源](https://github.com/zhayujie/chatgpt-on-wechat/blob/master/plugins/source.json)记录的插件名/仓库地址"。这是管理员命令，认证方法在[这里](https://github.com/zhayujie/chatgpt-on-wechat/tree/master/plugins/godcmd)。
+    安装插件的命令是"#installp [仓库源](https://github.com/zhayujie/CowAgent/blob/master/plugins/source.json)记录的插件名/仓库地址"。这是管理员命令，认证方法在[这里](https://github.com/zhayujie/CowAgent/tree/master/plugins/godcmd)。
 
-    - 安装[仓库源](https://github.com/zhayujie/chatgpt-on-wechat/blob/master/plugins/source.json)记录的插件：#installp sdwebui
+    - 安装[仓库源](https://github.com/zhayujie/CowAgent/blob/master/plugins/source.json)记录的插件：#installp sdwebui
 
     - 安装指定仓库的插件：#installp https://github.com/lanvent/plugin_sdwebui.git
 
@@ -52,7 +52,7 @@
 
 以下是它们的默认处理逻辑(太长不看，可跳到[插件编写示例](#插件编写示例))：
 
-**注意以下包含的代码是`v1.1.0`中的片段，已过时，只可用于理解事件，最新的默认代码逻辑请参考[chat_channel](https://github.com/zhayujie/chatgpt-on-wechat/blob/master/channel/chat_channel.py)**
+**注意以下包含的代码是`v1.1.0`中的片段，已过时，只可用于理解事件，最新的默认代码逻辑请参考[chat_channel](https://github.com/zhayujie/CowAgent/blob/master/channel/chat_channel.py)**
 
 #### 1. 收到消息
 
@@ -81,7 +81,7 @@
 ```
 
 - `isgroup`: `Context`是否是群聊消息。
-- `msg`: `itchat`中原始的消息对象。
+- `msg`: the original message object from the channel.
 - `receiver`: 需要回复消息的对象ID。
 - `session_id`: 会话ID(一般是发送触发bot消息的用户ID，如果在群聊中并且`conf`里设置了`group_chat_in_one_session`，那么此处便是群聊ID)
 
@@ -267,7 +267,7 @@ class Hello(Plugin):
 - 尽情将你想要的个性化功能设计为插件。
 - 一个插件目录建议只注册一个插件类。建议使用单独的仓库维护插件，便于更新。
 
-  在测试调试好后提交`PR`，把自己的仓库加入到[仓库源](https://github.com/zhayujie/chatgpt-on-wechat/blob/master/plugins/source.json)中。
+  在测试调试好后提交`PR`，把自己的仓库加入到[仓库源](https://github.com/zhayujie/CowAgent/blob/master/plugins/source.json)中。
 
 - 插件的config文件、使用说明`README.md`、`requirement.txt`等放置在插件目录中。
 - 默认优先级不要超过管理员插件`Godcmd`的优先级(999)，`Godcmd`插件提供了配置管理、插件管理等功能。

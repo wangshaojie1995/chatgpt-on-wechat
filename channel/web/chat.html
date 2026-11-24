@@ -1,165 +1,293 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh" class="">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;  /* 占据所有高度 */
-            margin: 0;
-            /* background-color: #f8f9fa; */
-        }
-        #chat-container {
-            display: flex;
-            flex-direction: column;
-            width: 100%;
-            max-width: 500px;
-            margin: auto;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            overflow: hidden;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-            flex: 1;  /* 使聊天容器占据剩余空间 */
-        }
-        #messages {
-            flex-direction: column;
-            display: flex;
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-            overflow-y: auto;
-            border-bottom: 1px solid #ccc;
-            background-color: #ffffff;
-        }
-       
-        .message {
-            margin: 5px 0;                /* 间隔 */
-            padding: 10px 15px;           /* 内边距 */
-            border-radius: 15px;          /* 圆角 */
-            max-width: 80%;               /* 限制最大宽度 */
-            min-width: 80px;              /* 设置最小宽度 */
-            min-height: 40px;             /* 设置最小高度 */
-            word-wrap: break-word;        /* 自动换行 */
-            position: relative;           /* 时间戳定位 */
-            display: inline-block;        /* 内容自适应宽度 */
-            box-sizing: border-box;       /* 包括内边距和边框 */
-            flex-shrink: 0; /* 禁止高度被压缩 */
-            word-wrap: break-word; /* 自动换行，防止单行过长 */
-            white-space: normal; /* 允许正常换行 */
-            overflow: hidden;
-        }
-
-        .bot {
-            background-color: #f1f1f1;    /* 灰色背景 */
-            color: black;                 /* 黑色字体 */
-            align-self: flex-start;       /* 左对齐 */
-            margin-right: auto;           /* 确保消息靠左 */
-            text-align: left;             /* 内容左对齐 */
-        }
-
-        .user {
-            background-color: #2bc840;    /* 蓝色背景 */
-            align-self: flex-end;         /* 右对齐 */
-            margin-left: auto;            /* 确保消息靠右 */
-            text-align: left;             /* 内容左对齐 */
-        }
-        .timestamp {
-            font-size: 0.8em;             /* 时间戳字体大小 */
-            color: rgba(0, 0, 0, 0.5);    /* 半透明黑色 */
-            margin-bottom: 5px;           /* 时间戳下方间距 */
-            display: block;               /* 时间戳独占一行 */
-        }
-        #input-container {
-            display: flex;
-            padding: 10px;
-            background-color: #ffffff;
-            border-top: 1px solid #ccc;
-        }
-        #input {
-            flex: 1;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            margin-right: 10px;
-        }
-        #send {
-            padding: 10px;
-            border: none;
-            background-color: #007bff;
-            color: white;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        #send:hover {
-            background-color: #0056b3;
-        }
-    </style>
-</head>
-<body>
-    <div id="chat-container">
-        <div id="messages"></div>
-        <div id="input-container">
-            <input type="text" id="input" placeholder="输入消息..." />
-            <button id="send">发送</button>
-        </div>
-    </div>
-
+    <title>CowAgent Console</title>
+    <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+    <!-- Vendored third-party assets (no external CDN dependency).
+         See channel/web/static/vendor/README.md for sources & versions. -->
+    <link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">
+    <script src="/assets/vendor/tailwind/tailwind.min.js"></script>
+    <script src="/assets/vendor/markdown-it/markdown-it.min.js"></script>
+    <link id="hljs-light" rel="stylesheet" href="/assets/vendor/highlightjs/styles/github.min.css">
+    <link id="hljs-dark" rel="stylesheet" href="/assets/vendor/highlightjs/styles/github-dark.min.css" disabled>
+    <script src="/assets/vendor/highlightjs/highlight.min.js"></script>
+    <script src="/assets/vendor/highlightjs/languages/python.min.js"></script>
+    <script src="/assets/vendor/highlightjs/languages/javascript.min.js"></script>
+    <script src="/assets/vendor/highlightjs/languages/java.min.js"></script>
+    <script src="/assets/vendor/highlightjs/languages/go.min.js"></script>
+    <script src="/assets/vendor/highlightjs/languages/bash.min.js"></script>
     <script>
-        const messagesDiv = document.getElementById('messages');
-        const input = document.getElementById('input');
-        const sendButton = document.getElementById('send');
-
-        // 生成唯一的 user_id
-        const userId = 'user_' + Math.random().toString(36).substr(2, 9);
-
-        // 连接 SSE
-        const eventSource = new EventSource(`/sse/${userId}`);
-
-        eventSource.onmessage = function(event) {
-            const message = JSON.parse(event.data);
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message bot';
-            const timestamp = new Date(message.timestamp).toLocaleTimeString();  // 假设消息中有时间戳
-            messageDiv.innerHTML = `<div class="timestamp">${timestamp}</div>${message.content}`;  // 显示时间
-            messagesDiv.appendChild(messageDiv);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;  // 滚动到底部
-        };
-
-        sendButton.onclick = function() {
-            sendMessage();
-        };
-
-        input.addEventListener('keypress', function(event) {
-            if (event.key === 'Enter') {
-                sendMessage();
-                event.preventDefault();  // 防止换行
-            }
-        });
-
-        function sendMessage() {
-            const userMessage = input.value;
-            if (userMessage) {
-                const timestamp = new Date().toISOString();  // 获取当前时间戳
-                fetch('/message', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ user_id: userId, message: userMessage, timestamp: timestamp })  // 发送时间戳
-                });
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message user';
-                const userTimestamp = new Date().toLocaleTimeString();  // 获取当前时间
-                messageDiv.innerHTML = `<div class="timestamp">${userTimestamp}</div>${userMessage}`;  // 显示时间
-                messagesDiv.appendChild(messageDiv);
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;  // 滚动到底部
-                input.value = '';  // 清空输入框
+    tailwind.config = {
+        darkMode: 'class',
+        theme: {
+            extend: {
+                fontFamily: {
+                    sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                    mono: ['"JetBrains Mono"', '"Fira Code"', 'Consolas', 'monospace'],
+                },
+                // Palette colors read CSS variables (defaults in base.css) so a
+                // theme can recolor the console; see static/js/core/themes.js.
+                colors: (function () {
+                    var v = function (name) { return 'rgb(var(--cw-' + name + ') / <alpha-value>)'; };
+                    var scale = function (name, steps) {
+                        var out = {};
+                        steps.forEach(function (s) { out[s] = v(name + '-' + s); });
+                        return out;
+                    };
+                    return {
+                        primary: scale('primary', [50, 100, 200, 300, 400, 500, 600, 700, 800, 900]),
+                        slate: scale('slate', [50, 100, 200, 300, 400, 500, 600, 700, 800, 900]),
+                        // Surfaces; a glass wallpaper lowers --cw-glass-alpha.
+                        panel: 'rgb(var(--cw-panel) / calc(<alpha-value> * var(--cw-glass-alpha)))',
+                        canvas: v('canvas'),
+                        sidebar: v('sidebar'),
+                    };
+                })(),
+                animation: {
+                    'pulse-dot': 'pulseDot 1.4s infinite ease-in-out both',
+                }
             }
         }
+    }
     </script>
+    <!-- Split out of a single console.css. The order is load-bearing: later
+         sheets override earlier ones, so keep it as-is and see
+         channel/web/README.md before inserting anything. -->
+    <link rel="stylesheet" href="/assets/css/base.css">
+    <link rel="stylesheet" href="/assets/css/sessions.css">
+    <link rel="stylesheet" href="/assets/css/components.css">
+    <link rel="stylesheet" href="/assets/css/markdown.css">
+    <link rel="stylesheet" href="/assets/css/chat.css">
+    <link rel="stylesheet" href="/assets/css/workspace.css">
+    <link rel="stylesheet" href="/assets/css/knowledge.css">
+    <link rel="stylesheet" href="/assets/css/agents.css">
+    <link rel="stylesheet" href="/assets/css/artifacts.css">
+    <link rel="stylesheet" href="/assets/css/shares.css">
+    <link rel="stylesheet" href="/assets/css/menu.css">
+    <link rel="stylesheet" href="/assets/css/themes.css">
+    <link rel="stylesheet" href="/assets/css/devices.css">
+    <!-- Apply theme/lang before first paint to avoid flash of unstyled content.
+         This runs synchronously in <head> so the correct class is on <html>
+         before any CSS or body rendering occurs. -->
+    <script>
+    // Map an arbitrary locale string (zh-CN, en-US, fr ...) to 'zh' / 'zh-Hant' / 'en',
+    // or '' when unrecognized so callers can fall through to the next source.
+    window.__cowNormalizeLang__ = function(raw) {
+        if (!raw) return '';
+        var v = String(raw).trim().toLowerCase().replace('_', '-');
+        if (v === 'auto') return '';
+        // Handle Traditional Chinese variants first (more specific)
+        if (v === 'zh-hant' || v.indexOf('zh-hant-') === 0 || v === 'zh-tw' || v === 'zh-hk') return 'zh-Hant';
+        // Then Simplified Chinese
+        if (v.indexOf('zh') === 0) return 'zh';
+        if (v.indexOf('en') === 0) return 'en';
+        return '';
+    };
+    // Resolve the console language by priority:
+    //   user choice (localStorage) -> backend-detected -> browser -> 'zh'.
+    window.__cowResolveLang__ = function() {
+        return window.__cowNormalizeLang__(localStorage.getItem('cow_lang'))
+            || window.__cowNormalizeLang__(window.__COW_DEFAULT_LANG__)
+            || window.__cowNormalizeLang__(navigator.language || (navigator.languages && navigator.languages[0]))
+            || 'zh';
+    };
+    (function() {
+        // Backend-resolved default language (from cow_lang config / auto-detect).
+        window.__COW_DEFAULT_LANG__ = '{{COW_DEFAULT_LANG}}';
+        // An explicit toggle wins; otherwise follow the OS, falling back to light.
+        window.__COW_DEFAULT_THEME__ = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        var theme = localStorage.getItem('cow_theme') || window.__COW_DEFAULT_THEME__;
+        if (theme === 'dark') document.documentElement.classList.add('dark');
+        // Replay the color theme's last variables (written by themes.js) so
+        // the first paint already has them.
+        try {
+            var cached = JSON.parse(localStorage.getItem('cow_theme_cache') || 'null');
+            var state = cached && cached.id === localStorage.getItem('cow_theme_id') && cached[theme === 'dark' ? 'dark' : 'light'];
+            if (state && state.vars) {
+                for (var name in state.vars) {
+                    if (name.indexOf('--cw-') === 0) document.documentElement.style.setProperty(name, state.vars[name]);
+                }
+                if (state.wallpaper) document.documentElement.setAttribute('data-wallpaper', state.wallpaper);
+                if (state.logo) document.documentElement.setAttribute('data-theme-logo', '');
+            }
+        } catch (e) {}
+        if (localStorage.getItem('cow_sidebar_collapsed') === '1') {
+            document.documentElement.classList.add('sidebar-collapsed');
+        }
+        // A customised menu is drawn by menu.js; keep the built-in one in
+        // sidebar.html from showing first. The timer is the way out should
+        // that script never run.
+        if (localStorage.getItem('cow_menu_cache')) {
+            document.documentElement.classList.add('menu-pending');
+            setTimeout(function () { document.documentElement.classList.remove('menu-pending'); }, 3000);
+        }
+        document.documentElement.setAttribute('lang', window.__cowResolveLang__());
+    })();
+    </script>
+</head>
+<body class="h-screen overflow-hidden bg-canvas text-slate-800 dark:text-slate-200 font-sans">
+
+<!--#include templates/layout/login.html-->
+
+    <div id="app" class="flex h-screen">
+
+<!--#include templates/layout/sidebar.html-->
+
+<!--#include templates/layout/session-panel.html-->
+
+<!--#include templates/modals/team-chat.html-->
+
+        <!-- Mobile overlay for session panel (click to close) -->
+        <div id="session-panel-overlay" class="session-panel-overlay hidden" onclick="closeSessionPanel()"></div>
+
+        <!-- ================================================================ -->
+        <!-- MAIN CONTENT                                                     -->
+        <!-- ================================================================ -->
+        <div id="main-content" class="flex-1 flex flex-col min-w-0 h-screen">
+<!--#include templates/layout/header.html-->
+
+            <!-- Content Area -->
+            <div id="content-area" class="flex-1 overflow-hidden">
+
+<!--#include templates/views/chat.html-->
+
+<!--#include templates/views/artifacts.html-->
+
+<!--#include templates/views/agents.html-->
+
+<!--#include templates/views/config.html-->
+
+<!--#include templates/views/skills.html-->
+
+<!--#include templates/views/memory.html-->
+
+<!--#include templates/views/knowledge.html-->
+
+<!--#include templates/views/channels.html-->
+
+<!--#include templates/views/tasks.html-->
+
+<!--#include templates/views/logs.html-->
+
+<!--#include templates/views/custom.html-->
+
+            </div><!-- /content-area -->
+        </div><!-- /main-content -->
+    </div><!-- /app -->
+
+<!--#include templates/modals/knowledge-dialog.html-->
+
+<!--#include templates/modals/mcp-editor.html-->
+
+<!--#include templates/modals/bash-settings.html-->
+
+<!--#include templates/modals/skill-add.html-->
+
+<!--#include templates/modals/theme-add.html-->
+
+<!--#include templates/modals/confirm-dialog.html-->
+
+<!--#include templates/modals/rename-dialog.html-->
+
+<!--#include templates/modals/folder-picker.html-->
+
+<!--#include templates/modals/vendor.html-->
+
+<!--#include templates/modals/custom-provider.html-->
+
+<!--#include templates/modals/task-edit.html-->
+
+<!--#include templates/modals/run-detail.html-->
+
+<!--#include templates/modals/menu-editor.html-->
+
+<!--#include templates/modals/share-dialogs.html-->
+
+<!--#include templates/modals/instance-dialogs.html-->
+
+    <!-- Split out of a single console.js. These are classic scripts, not
+         modules: they share one global scope and `defer` runs them in this
+         order. The order is load-bearing - see channel/web/README.md before
+         adding, removing or moving a line. -->
+
+    <!-- doc-editor first: views/doc-viewers.js builds its editors at load time. -->
+    <script defer src="/assets/js/doc-editor.js"></script>
+
+    <script defer src="/assets/js/core/version.js"></script>
+    <script defer src="/assets/js/core/i18n.js"></script>
+    <script defer src="/assets/js/core/theme.js"></script>
+    <script defer src="/assets/js/core/themes.js"></script>
+    <script defer src="/assets/js/core/utils.js"></script>
+    <script defer src="/assets/js/core/markdown.js"></script>
+    <script defer src="/assets/js/core/confirm.js"></script>
+    <script defer src="/assets/js/core/notify.js"></script>
+    <script defer src="/assets/js/core/nav.js"></script>
+    <!-- Right after nav.js: draws the sidebar at load time, and nav.js's
+         click handler and view switch call into it. -->
+    <script defer src="/assets/js/core/menu.js"></script>
+    <!-- After nav.js, whose navigateTo it drives and whose VIEW_META it
+         validates against. Only registers a popstate listener at load time;
+         the first route is applied from initApp(), once auth has settled. -->
+    <script defer src="/assets/js/core/router.js"></script>
+    <!-- Declarations only; boot.js calls instanceBoot() before the first
+         backend request, and auth.js consults instanceActive() on a 401. -->
+    <script defer src="/assets/js/core/instances.js"></script>
+
+    <!-- Ahead of chat/, not with the other views: chat/state.js computes
+         sessionId at load time and activeSessionStorageKey() reads
+         defaultAgentId, which is a `let` declared here. Loading this later
+         puts that binding in its temporal dead zone, and chat/state.js dies
+         on the spot - taking the restored session, and so the visible
+         conversation history, with it. -->
+    <script defer src="/assets/js/views/agents.js"></script>
+
+    <script defer src="/assets/js/chat/state.js"></script>
+    <script defer src="/assets/js/chat/context-usage.js"></script>
+    <script defer src="/assets/js/chat/workspace-selector.js"></script>
+    <script defer src="/assets/js/chat/session-settings.js"></script>
+    <script defer src="/assets/js/chat/composer-input.js"></script>
+    <script defer src="/assets/js/chat/message-actions.js"></script>
+    <script defer src="/assets/js/chat/send.js"></script>
+    <script defer src="/assets/js/chat/scheduler-notify.js"></script>
+    <script defer src="/assets/js/chat/render.js"></script>
+    <script defer src="/assets/js/chat/timeline.js"></script>
+    <script defer src="/assets/js/chat/new-chat.js"></script>
+    <script defer src="/assets/js/chat/session-status.js"></script>
+
+    <script defer src="/assets/js/views/sessions.js"></script>
+    <script defer src="/assets/js/views/config.js"></script>
+    <script defer src="/assets/js/views/models.js"></script>
+    <script defer src="/assets/js/views/models-custom-provider.js"></script>
+    <script defer src="/assets/js/views/channels.js"></script>
+    <script defer src="/assets/js/views/channels-weixin.js"></script>
+    <script defer src="/assets/js/views/channels-wecom.js"></script>
+    <script defer src="/assets/js/views/channels-feishu.js"></script>
+    <script defer src="/assets/js/views/tasks.js"></script>
+    <script defer src="/assets/js/views/tasks-modal.js"></script>
+    <script defer src="/assets/js/views/skills.js"></script>
+    <script defer src="/assets/js/views/memory.js"></script>
+    <script defer src="/assets/js/views/doc-viewers.js"></script>
+    <script defer src="/assets/js/views/knowledge.js"></script>
+    <script defer src="/assets/js/views/logs.js"></script>
+    <script defer src="/assets/js/views/artifacts.js"></script>
+    <script defer src="/assets/js/views/menu-editor.js"></script>
+    <script defer src="/assets/js/views/shares.js"></script>
+    <script defer src="/assets/js/views/devices.js"></script>
+
+    <!-- Last of the core layer rather than first, which is where it sat in
+         console.js. It installs a window.fetch wrapper for 401 handling, and
+         chat/state.js installs one that appends agent_id; keeping this one
+         outermost means the 401 check still sees the URL the caller passed. -->
+    <script defer src="/assets/js/core/auth.js"></script>
+
+    <!-- boot before workspace.js, which is where console.js used to sit:
+         applyI18n() probes for relocalizeWorkspacePanel with a typeof guard,
+         and it has always run before workspace.js defined it. -->
+    <script defer src="/assets/js/boot.js"></script>
+
+    <script defer src="/assets/js/workspace.js"></script>
 </body>
 </html>
