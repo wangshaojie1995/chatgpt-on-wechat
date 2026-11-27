@@ -88,6 +88,13 @@ def _replace_skill_dir(source: str, target: str) -> None:
     replace_directory(source, target)
 
 
+def _strip_github_url_suffix(url: str) -> str:
+    """Remove browser query strings and fragments from GitHub install URLs."""
+    if url.startswith(("http://github.com/", "https://github.com/")):
+        return urlparse(url)._replace(query="", fragment="").geturl()
+    return url
+
+
 def _parse_github_url(url: str):
     """Parse a full GitHub URL into (owner, repo, branch, subpath).
 
@@ -98,7 +105,7 @@ def _parse_github_url(url: str):
       https://github.com/owner/repo/tree/branch/path/to/skill
       https://github.com/owner/repo/blob/branch/path/to/skill
     """
-    m = _GITHUB_URL_RE.match(url.strip())
+    m = _GITHUB_URL_RE.match(_strip_github_url_suffix(url.strip()))
     if not m:
         return None
     owner, repo, branch, subpath = m.groups()
@@ -114,7 +121,11 @@ def _parse_gitlab_url(url: str):
       https://gitlab.com/owner/repo/-/tree/branch
       https://gitlab.com/owner/repo/-/tree/branch/path/to/skill
     """
-    m = _GITLAB_URL_RE.match(url.strip())
+    url = url.strip()
+    if url.startswith(("http://gitlab.com/", "https://gitlab.com/")):
+        # GitLab's tree links carry ?ref_type=heads
+        url = urlparse(url)._replace(query="", fragment="").geturl()
+    m = _GITLAB_URL_RE.match(url)
     if not m:
         return None
     owner, repo, branch, subpath = m.groups()
@@ -979,6 +990,8 @@ def _route_install(name: str, result: InstallResult, agent_id: str = None):
         _install_local(name, result, agent_id=agent_id)
         return
 
+    name = _strip_github_url_suffix(name)
+
     # --- Direct SKILL.md URL ---
     if name.startswith(("http://", "https://")) and name.rstrip("/").endswith("SKILL.md"):
         dir_url = re.sub(r'/SKILL\.md/?$', '', name)
@@ -1403,7 +1416,10 @@ def _install_hub(name, result: InstallResult, provider=None, agent_id: str = Non
                 except Exception as e:
                     dl_err = e
                     status = getattr(getattr(e, "response", None), "status_code", None)
-                    if status == 409 and not owner:
+                    # A Skill Hub name already names one publisher's skill, whose
+                    # mirror the hub serves; only an explicit registry install
+                    # has nobody to fall back to.
+                    if status == 409 and not owner and (provider or not has_mirror):
                         raise SkillInstallError(
                             f"More than one publisher on {src_provider} has a skill named '{name}'. "
                             f"Include the publisher, e.g. {provider or src_provider}:<owner>/{name}, "

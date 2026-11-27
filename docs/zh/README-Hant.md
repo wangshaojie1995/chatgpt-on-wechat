@@ -24,7 +24,7 @@ CowAgent 輕量、易部署、可擴充，自由接入主流大模型，覆蓋�
 <p align="center">
   <a href="https://cowagent.ai/zh/?utm_source=github">🌐 官網</a> &nbsp;·&nbsp;
   <a href="https://docs.cowagent.ai/zh/">📖 文件中心</a> &nbsp;·&nbsp;
-  <a href="https://docs.cowagent.ai/zh/guide/quick-start">🚀 快速開始</a> &nbsp;·&nbsp;
+  <a href="https://docs.cowagent.ai/zh/guide">🚀 快速開始</a> &nbsp;·&nbsp;
   <a href="https://skills.cowagent.ai/">🧩 技能廣場</a> &nbsp;·&nbsp;
   <a href="https://cowagent.ai/zh/download/">💻 下載客戶端</a> &nbsp;·&nbsp;
   <a href="https://link-ai.tech/cowagent/create?utm_source=cowagent&utm_medium=readme&utm_campaign=nav">☁️ 線上體驗</a>
@@ -58,6 +58,7 @@ CowAgent 輕量、易部署、可擴充，自由接入主流大模型，覆蓋�
 | 多模態 | 文字、圖片、語音、檔案全訊息型別支援，覆蓋識別、生成、收發 |
 | [模型](https://docs.cowagent.ai/zh/models) | DeepSeek、Claude、Gemini、GPT、GLM、Qwen、Kimi、MiniMax、Doubao 等主流廠商，設定一行切換 |
 | [部署](https://docs.cowagent.ai/zh/guide/quick-start) | 一鍵指令碼安裝，Web 控制台統一管理；本地、Docker、伺服器多種部署方式 |
+| [行動端](https://docs.cowagent.ai/zh/guide/mobile) | iOS / Android / 鴻蒙 App（公開測試），可在手機上執行 Agent，或掃碼連接電腦、伺服器上的 CowAgent |
 
 <br/>
 
@@ -72,6 +73,10 @@ CowAgent 是一個完整的 **Agent Harness**：訊息從各類**通道**進入�
 <br/>
 
 ## 🚀 快速開始
+
+CowAgent 支援原始碼部署、桌面客戶端、行動端和雲端託管四種使用方式，可依執行位置和使用情境選擇，詳見 [選擇使用方式](https://docs.cowagent.ai/zh/guide)。
+
+### 原始碼部署
 
 專案提供一鍵安裝指令碼，自動完成依賴安裝、設定和啟動：
 
@@ -98,7 +103,7 @@ docker compose up -d
 
 > 伺服器部署且需要從外部網路存取控制台時，請在 `config.json` 中將 `web_host` 設為 `0.0.0.0`（同時強烈建議設定 `web_password` 啟用身分驗證），然後訪問 `http://<server-ip>:9899`，並確保防火牆/安全組放行 `9899` 埠。
 
-> 📖 詳細安裝指南：[快速開始](https://docs.cowagent.ai/zh/guide/quick-start) · [原始碼安裝](https://docs.cowagent.ai/zh/guide/manual-install) · [升級](https://docs.cowagent.ai/zh/guide/upgrade)
+> 📖 詳細安裝指南：[一鍵原始碼安裝](https://docs.cowagent.ai/zh/guide/quick-start) · [原始碼安裝](https://docs.cowagent.ai/zh/guide/manual-install) · [升級](https://docs.cowagent.ai/zh/guide/upgrade)
 
 安裝後可使用 `cow` [CLI 命令](https://docs.cowagent.ai/zh/cli) 管理服務：
 
@@ -108,9 +113,20 @@ cow status | logs                  # 狀態和日誌
 cow update                         # 拉取最新程式碼並重啟
 cow skill install <名稱>           # 安裝技能
 cow install-browser                # 安裝瀏覽器工具
+cow pair                           # 產生配對碼，連接手機等裝置
 ```
 
-> 💻 桌面客戶端：前往 **[下載 CowAgent 桌面客戶端](https://cowagent.ai/zh/download/)**（macOS / Windows），內建 Agent 執行環境，開箱即用。
+### 桌面客戶端
+
+💻 前往 **[下載 CowAgent 桌面客戶端](https://cowagent.ai/zh/download/)**（macOS / Windows），內建 Agent 執行環境，開箱即用，詳見 [桌面客戶端](https://docs.cowagent.ai/zh/guide/desktop)。
+
+### 行動端
+
+📱 **[下載 CowAgent App](https://cowagent.ai/zh/download/#mobile)**（iOS / Android / 鴻蒙，公開測試），可直接在手機上執行，也可掃碼連接電腦或伺服器，詳見 [行動端](https://docs.cowagent.ai/zh/guide/mobile)。
+
+### 雲端託管
+
+☁️ 不想自己部署，也可以直接 **[開啟雲端控制台](https://cloud.cowagent.ai/?utm_source=github)** 建立專屬實例，內建模型服務，7×24 小時線上，詳見 [雲端託管](https://docs.cowagent.ai/zh/guide/cloud)。
 
 <br/>
 
@@ -133,7 +149,7 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 | [DeepSeek](https://docs.cowagent.ai/zh/models/deepseek) | deepseek-flash (V4.1) / pro | ✅ | ✅ | | | | |
 | [Claude](https://docs.cowagent.ai/zh/models/claude) | claude-opus-5-5 / sonnet-5-5 | ✅ | ✅ | | | | |
 | [OpenAI](https://docs.cowagent.ai/zh/models/openai) | gpt-6.2-sol / gpt-6.2-astra | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](https://docs.cowagent.ai/zh/models/gemini) | gemini-4-argon | ✅ | ✅ | ✅ | | | |
+| [Gemini](https://docs.cowagent.ai/zh/models/gemini) | gemini-4-neon | ✅ | ✅ | ✅ | | | |
 | [MiniMax](https://docs.cowagent.ai/zh/models/minimax) | MiniMax-M3.1-Flash / M3 | ✅ | ✅ | ✅ | | ✅ | |
 | [智譜 GLM](https://docs.cowagent.ai/zh/models/glm) | glm-5.3-flash、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
 | [通義千問](https://docs.cowagent.ai/zh/models/qwen) | qwen3.8-flash | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -226,6 +242,8 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 <br/>
 
 ## 🏷 更新日誌
+
+> **2026.11.25：** [v2.3.0](https://github.com/zhayujie/CowAgent/releases/tag/2.3.0) — 發布行動端 App（iOS / Android / 鴻蒙，公開測試）、新增裝置管理與多裝置連接、新增 CowAgent 模型服務與 Codex 訂閱接入、工具、通道與安全性完善
 
 > **2026.10.30：** [v2.2.2](https://github.com/zhayujie/CowAgent/releases/tag/2.2.2) — 新增訪客獨立頁面和視窗嵌入、支援自訂主題、主模型原生多模態輸入、新模型接入、工具、通道與安全性完善
 

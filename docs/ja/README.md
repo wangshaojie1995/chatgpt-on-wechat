@@ -24,7 +24,7 @@ CowAgent は軽量でデプロイしやすく、拡張性に優れています�
 <p align="center">
   <a href="https://cowagent.ai/?utm_source=github">🌐 ウェブサイト</a> &nbsp;·&nbsp;
   <a href="https://docs.cowagent.ai/ja/intro/index">📖 ドキュメント</a> &nbsp;·&nbsp;
-  <a href="https://docs.cowagent.ai/ja/guide/quick-start">🚀 クイックスタート</a> &nbsp;·&nbsp;
+  <a href="https://docs.cowagent.ai/ja/guide">🚀 クイックスタート</a> &nbsp;·&nbsp;
   <a href="https://skills.cowagent.ai/">🧩 Skill Hub</a> &nbsp;·&nbsp;
   <a href="https://cowagent.ai/download/">💻 ダウンロード</a> &nbsp;·&nbsp;
   <a href="https://link-ai.tech/cowagent/create?utm_source=cowagent&utm_medium=readme&utm_campaign=nav">☁️ オンラインで試す</a>
@@ -58,6 +58,7 @@ CowAgent は軽量でデプロイしやすく、拡張性に優れています�
 | マルチモーダル | テキスト・画像・音声・ファイルをフルサポート — 認識・生成・双方向送受信 |
 | [モデル](https://docs.cowagent.ai/ja/models/index) | Claude、GPT、Gemini、DeepSeek、GLM、Qwen、Kimi、MiniMax、Doubao など、設定 1 行で切り替え可能 |
 | [デプロイ](https://docs.cowagent.ai/ja/guide/quick-start) | ワンラインインストーラー、統合された Web コンソール、複数のデプロイモード（ローカル / Docker / サーバー） |
+| [モバイル](https://docs.cowagent.ai/ja/guide/mobile) | iOS / Android / HarmonyOS アプリ（公開ベータ版）。スマートフォン上で Agent を実行するか、QR コードで PC やサーバー上の CowAgent に接続 |
 
 <br/>
 
@@ -72,6 +73,10 @@ CowAgent は完全な **Agent Harness** です：メッセージは各種**チ�
 <br/>
 
 ## 🚀 クイックスタート
+
+CowAgent はソースインストール、デスクトップクライアント、モバイルアプリ、CowAgent Cloud の 4 つの方法で利用できます。違いは [利用方法を選ぶ](https://docs.cowagent.ai/ja/guide) を参照してください。
+
+### ソースインストール
 
 依存関係のインストール、設定、起動を自動で行うワンラインインストーラーを提供しています：
 
@@ -98,7 +103,7 @@ docker compose up -d
 
 > サーバーデプロイでコンソールに公開アクセスする場合は、`config.json` の `web_host` を `0.0.0.0` に設定してください（あわせて `web_password` の設定も強く推奨）。その後 `http://<server-ip>:9899` にアクセスし、ファイアウォール／セキュリティグループで `9899` ポートを開放することも忘れずに。
 
-> 📖 詳細ガイド: [クイックスタート](https://docs.cowagent.ai/ja/guide/quick-start) · [ソースからインストール](https://docs.cowagent.ai/ja/guide/manual-install) · [アップグレード](https://docs.cowagent.ai/ja/guide/upgrade)
+> 📖 詳細ガイド: [ワンクリックソースインストール](https://docs.cowagent.ai/ja/guide/quick-start) · [ソースからインストール](https://docs.cowagent.ai/ja/guide/manual-install) · [アップグレード](https://docs.cowagent.ai/ja/guide/upgrade)
 
 インストール後は、[`cow` CLI](https://docs.cowagent.ai/ja/cli/index) でサービスを管理できます：
 
@@ -108,9 +113,20 @@ cow status | logs                  # ステータスとログ
 cow update                         # 最新コード取得後に再起動
 cow skill install <名前>           # Skill のインストール
 cow install-browser                # ブラウザツールのインストール
+cow pair                           # ペアリングコードを生成し、スマートフォンなどのデバイスを接続
 ```
 
-> 💻 デスクトップクライアント：**[CowAgent デスクトップクライアント](https://cowagent.ai/download/)**（macOS / Windows）はバックエンドを内蔵し、ダウンロードしてすぐに使えます。
+### デスクトップクライアント
+
+💻 **[CowAgent デスクトップクライアント](https://cowagent.ai/download/)**（macOS / Windows）はバックエンドを内蔵し、ダウンロードしてすぐに使えます。詳しくは [デスクトップクライアント](https://docs.cowagent.ai/ja/guide/desktop) を参照してください。
+
+### モバイルアプリ
+
+📱 **[CowAgent アプリをダウンロード](https://cowagent.ai/download/#mobile)**（iOS / Android / HarmonyOS、公開ベータ版）。スマートフォン上で直接実行するほか、QR コードで PC やサーバーに接続できます。詳しくは [モバイルアプリ](https://docs.cowagent.ai/ja/guide/mobile) を参照してください。
+
+### CowAgent Cloud
+
+☁️ デプロイせずに使いたい場合は、**[クラウドコンソールを開く](https://cloud.cowagent.ai/?utm_source=github)** から専用インスタンスを作成できます。モデルを内蔵し、24 時間 365 日オンラインです。詳しくは [CowAgent Cloud](https://docs.cowagent.ai/ja/guide/cloud) を参照してください。
 
 <br/>
 
@@ -130,10 +146,10 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 
 | プロバイダー | 代表的なモデル | チャット | 画像認識 | 画像生成 | ASR | TTS | Embedding |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](https://docs.cowagent.ai/ja/models/deepseek) | deepseek-flash (V4.1) / pro | ✅ | ✅ | | | | |
+| [DeepSeek](https://docs.cowagent.ai/ja/models/deepseek) | deepseek-flash (V4.1) / pro | ✅ | ✅ | | ✅ | ✅ | |
 | [Claude](https://docs.cowagent.ai/ja/models/claude) | claude-opus-5-5 / sonnet-5-5 | ✅ | ✅ | | | | |
 | [OpenAI](https://docs.cowagent.ai/ja/models/openai) | gpt-6.2-sol / gpt-6.2-astra | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](https://docs.cowagent.ai/ja/models/gemini) | gemini-4-argon | ✅ | ✅ | ✅ | | | |
+| [Gemini](https://docs.cowagent.ai/ja/models/gemini) | gemini-4-neon | ✅ | ✅ | ✅ | | | |
 | [MiniMax](https://docs.cowagent.ai/ja/models/minimax) | MiniMax-M3.1-Flash / M3 | ✅ | ✅ | ✅ | | ✅ | |
 | [GLM](https://docs.cowagent.ai/ja/models/glm) | glm-5.3-flash、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
 | [Qwen](https://docs.cowagent.ai/ja/models/qwen) | qwen3.8-flash | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -142,7 +158,7 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 | [ERNIE](https://docs.cowagent.ai/ja/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
 | [MiMo](https://docs.cowagent.ai/ja/models/mimo) | mimo-v2.6-pro / v2.6-flash | ✅ | ✅ | | ✅ | ✅ | |
 | [LinkAI](https://docs.cowagent.ai/ja/models/linkai) | 1 つの Key で 100+ モデルに接続 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [カスタム](https://docs.cowagent.ai/ja/models/custom) | ローカルモデル / サードパーティプロキシ | ✅ | | | | | |
+| [カスタム](https://docs.cowagent.ai/ja/models/custom) | ローカルモデル / サードパーティプロキシ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 > Web コンソールでの設定が推奨されており、ファイルを手動編集する必要はありません。手動設定については各プロバイダーのドキュメントおよび [モデル概要](https://docs.cowagent.ai/ja/models/index) を参照してください。
 
@@ -225,6 +241,8 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 <br/>
 
 ## 🏷 更新履歴
+
+> **2026.11.25:** [v2.3.0](https://github.com/zhayujie/CowAgent/releases/tag/2.3.0) — モバイルアプリの公開（iOS / Android / HarmonyOS、公開ベータ版）、デバイス管理と複数デバイスの接続、CowAgent モデルサービスと Codex サブスクリプションへの対応、ツール・チャネル・セキュリティの改善。
 
 > **2026.10.30:** [v2.2.2](https://github.com/zhayujie/CowAgent/releases/tag/2.2.2) — ゲストページ（独立ページとウィンドウ埋め込み）の追加、カスタムテーマ対応、メインモデルのネイティブマルチモーダル入力、新モデルの追加、ツール・チャネル・セキュリティの改善。
 

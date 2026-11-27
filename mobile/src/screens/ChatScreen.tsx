@@ -15,6 +15,8 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import Animated, {FadeIn, FadeOut, useSharedValue} from 'react-native-reanimated';
@@ -35,7 +37,7 @@ import {DrawerMenu, type DrawerRoute, type DrawerView} from '../components/Drawe
 import {Icon} from '../components/Icon';
 import {Intro} from '../components/Intro';
 import {LinkBanner} from '../components/LinkBanner';
-import {ListShiftContext} from '../components/listAnchor';
+import {ListPinContext, ListShiftContext} from '../components/listAnchor';
 import {MessageItem} from '../components/MessageItem';
 import {ServerSheet} from '../components/ServerSheet';
 import {SessionActions} from '../components/SessionActions';
@@ -76,7 +78,8 @@ import {CHAT_WIDTH, PaneWidthProvider, usePaneWidth, useSidebarLayout} from '../
 import {radius} from '../theme/palette';
 import {makeStyles, useTheme} from '../theme/theme';
 import {chatModelReady} from '../utils/capabilities';
-import {AvoidKeyboard} from '../components/AvoidKeyboard';
+import type {Space} from '../utils/sessionGroups';
+import {AvoidKeyboard, TrackKeyboard} from '../components/AvoidKeyboard';
 
 type Props = StackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -94,6 +97,20 @@ const FOLLOW_PX = 80;
  */
 const FOLLOW_POSITION = {minIndexForVisible: 0, autoscrollToTopThreshold: FOLLOW_PX};
 const HOLD_POSITION = {minIndexForVisible: 1, autoscrollToTopThreshold: FOLLOW_PX};
+/** iOS follows the keyboard frame by frame, above the home-indicator inset kept under the composer. */
+function KeyboardBody({children, inset, style}: {children: React.ReactNode; inset: number; style: StyleProp<ViewStyle>}) {
+  return Platform.OS === 'ios' ? (
+    <TrackKeyboard style={style} inset={inset}>
+      {children}
+    </TrackKeyboard>
+  ) : (
+    <AvoidKeyboard style={style}>{children}</AvoidKeyboard>
+  );
+}
+
+/** How long the row above a toggled message stays held, past the frames it takes to lay out. */
+const PIN_MS = 600;
+const SHOW_AI_NOTICE = (Platform.OS as string) === 'harmony';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -267,7 +284,8 @@ export function ChatScreen({route, navigation}: Props) {
   }, []);
   const openDrawer = useCallback(
     (view: DrawerView) => {
-      Keyboard.dismiss();
+      // Blur, don't only dismiss: on Android a still-focused box reopens the keyboard when the drawer leaves.
+      dock.current?.blur();
       if (wide) {
         useLayoutStore.getState().toggleSidebar(view);
         return;
@@ -343,11 +361,26 @@ export function ChatScreen({route, navigation}: Props) {
     visited.current = visited.current.filter(v => v.sessionId !== id);
   }, []);
 
-  const startNewChat = useCallback(() => {
-    setDrawerOpen(false);
-    setDraft('');
-    navigation.setParams({sessionId: newSessionId(), isNew: true});
-  }, [navigation]);
+  /** null leaves the new chat in the Agent's own workspace, without asking the server. */
+  const openNewChat = useCallback(
+    (space: Space | null) => {
+      setDrawerOpen(false);
+      setDraft('');
+      const id = newSessionId();
+      if (space) {
+        useProjectStore
+          .getState()
+          .startIn(id, useAgentStore.getState().currentId, space)
+          .catch(e => showToast(trf('composer_ws_switch_failed', {error: errorText(e)})));
+      }
+      navigation.setParams({sessionId: id, isNew: true});
+    },
+    [navigation],
+  );
+
+  // A new chat keeps working in the project the current one is in.
+  const inherited = remote ? projects?.current : null;
+  const startNewChat = useCallback(() => openNewChat(inherited ?? null), [openNewChat, inherited]);
 
   const openSession = useCallback(
     (session: SessionItem) => {
@@ -362,6 +395,7 @@ export function ChatScreen({route, navigation}: Props) {
 
   const goTo = useCallback(
     (target: DrawerRoute) => {
+      dock.current?.blur();
       setDrawerOpen(false);
       navigation.navigate(target);
     },
@@ -369,12 +403,14 @@ export function ChatScreen({route, navigation}: Props) {
   );
 
   const openMenuFile = useCallback((file: ChatFile) => {
+    dock.current?.blur();
     setDrawerOpen(false);
     openFile(file);
   }, []);
 
   const openLink = useCallback(
     (label: string, url: string, external: boolean) => {
+      dock.current?.blur();
       setDrawerOpen(false);
       if (external) {
         openWebPage(serverUrl(url), label);
@@ -389,6 +425,7 @@ export function ChatScreen({route, navigation}: Props) {
     useLayoutStore.setState({
       chat: {
         newChat: startNewChat,
+        newChatIn: openNewChat,
         openSession,
         sessionActions: setActingSession,
         openFile: openMenuFile,
@@ -396,7 +433,7 @@ export function ChatScreen({route, navigation}: Props) {
         switchServer: () => setServerSheetOpen(true),
       },
     });
-  }, [startNewChat, openSession, openMenuFile, openLink]);
+  }, [startNewChat, openNewChat, openSession, openMenuFile, openLink]);
   useEffect(() => () => useLayoutStore.setState({chat: null}), []);
   useEffect(() => useLayoutStore.setState({sessionId}), [sessionId]);
 
@@ -422,12 +459,15 @@ export function ChatScreen({route, navigation}: Props) {
   const switchAgent = useCallback(
     (agentId: string) => {
       setAgentSheetOpen(false);
-      if (agentId !== useAgentStore.getState().currentId) {
-        useAgentStore.getState().select(agentId);
+      if (agentId === useAgentStore.getState().currentId) {
+        startNewChat();
+        return;
       }
-      startNewChat();
+      // The project record belongs to the Agent left behind, so the new one starts on its own.
+      useAgentStore.getState().select(agentId);
+      openNewChat(null);
     },
-    [startNewChat],
+    [startNewChat, openNewChat],
   );
 
   const list = useRef<FlatList<ChatMessage>>(null);
@@ -442,6 +482,38 @@ export function ChatScreen({route, navigation}: Props) {
     offsetRef.current = next;
     list.current?.scrollToOffset({offset: next, animated: false});
   }, []);
+  // While a message opens or closes something, the row above it holds still and the message grows downwards.
+  const [heldRow, setHeldRow] = useState<number | null>(null);
+  const heldRef = useRef<number | null>(null);
+  const pinApply = useRef<(() => void) | null>(null);
+  const pinTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const dataRef = useRef<ChatMessage[]>([]);
+  const pinRow = useCallback((id: string, apply: () => void) => {
+    const above = dataRef.current.findIndex(m => m.id === id) + 1;
+    if (above <= 0 || above >= dataRef.current.length) {
+      return false;
+    }
+    clearTimeout(pinTimer.current);
+    pinTimer.current = setTimeout(() => {
+      heldRef.current = null;
+      setHeldRow(null);
+    }, PIN_MS);
+    if (heldRef.current === above) {
+      apply();
+      return true;
+    }
+    pinApply.current = apply;
+    heldRef.current = above;
+    setHeldRow(above);
+    return true;
+  }, []);
+  // The toggle waits for the hold to reach the list, or the first frame would still move.
+  useEffect(() => {
+    const apply = pinApply.current;
+    pinApply.current = null;
+    apply?.();
+  }, [heldRow]);
+  useEffect(() => () => clearTimeout(pinTimer.current), []);
   // A conversation shorter than the screen sits at its top (flex-end, inverted), so the newest row moves
   // up as it grows. Keeping that row in place would scroll the page away and animate it back every chunk.
   const [overflowing, setOverflowing] = useState(false);
@@ -804,7 +876,7 @@ export function ChatScreen({route, navigation}: Props) {
     [bandTop, bandBottom],
   );
   const swipeStart = useCallback(() => {
-    Keyboard.dismiss();
+    dock.current?.blur();
     setDrawerView('menu');
     setDrawerNested(false);
     refreshDrawer();
@@ -845,6 +917,7 @@ export function ChatScreen({route, navigation}: Props) {
 
   // Inverted list keeps the newest message pinned to the bottom while streaming.
   const data = useMemo(() => [...messages].reverse(), [messages]);
+  dataRef.current = data;
   // A shared conversation names whoever said each reply.
   const shared = teamSize > 0;
   const openContext = useCallback(() => {
@@ -961,7 +1034,7 @@ export function ChatScreen({route, navigation}: Props) {
         </View>
         <LinkBanner />
 
-        <AvoidKeyboard style={styles.body}>
+        <KeyboardBody style={styles.body} inset={insets.bottom}>
           <PaneWidthProvider width={columnWidth}>
             {empty ? (
               loading ? (
@@ -980,6 +1053,7 @@ export function ChatScreen({route, navigation}: Props) {
                 </View>
               )
             ) : (
+              <ListPinContext.Provider value={pinRow}>
               <ListShiftContext.Provider value={shiftList}>
                 <View style={styles.body}>
                   <FlatList
@@ -992,7 +1066,13 @@ export function ChatScreen({route, navigation}: Props) {
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="on-drag"
                     maintainVisibleContentPosition={
-                      overflowing ? (holding ? HOLD_POSITION : FOLLOW_POSITION) : undefined
+                      heldRow !== null
+                        ? {minIndexForVisible: heldRow}
+                        : overflowing
+                          ? holding
+                            ? HOLD_POSITION
+                            : FOLLOW_POSITION
+                          : undefined
                     }
                     onLayout={onListLayout}
                     onContentSizeChange={onListContentSize}
@@ -1017,6 +1097,7 @@ export function ChatScreen({route, navigation}: Props) {
                   )}
                 </View>
               </ListShiftContext.Provider>
+              </ListPinContext.Provider>
             )}
             <View style={styles.column}>
               <Dock
@@ -1048,10 +1129,11 @@ export function ChatScreen({route, navigation}: Props) {
                 searchFiles={searchFiles}
                 onPickFile={pickFile}
               />
+              {SHOW_AI_NOTICE && <Text style={styles.aiNotice}>{tr('chat_ai_notice')}</Text>}
             </View>
           </PaneWidthProvider>
-          {!keyboardShown && <View style={{height: insets.bottom}} />}
-        </AvoidKeyboard>
+          {(Platform.OS === 'ios' || !keyboardShown) && <View style={{height: insets.bottom}} />}
+        </KeyboardBody>
 
         <VoiceOverlay />
         <ToastHost bottom={insets.bottom + 150} />
@@ -1061,12 +1143,14 @@ export function ChatScreen({route, navigation}: Props) {
             <DrawerMenu
               view={drawerView}
               nested={drawerNested}
+              open={drawerOpen}
               onViewChange={view => {
                 setDrawerView(view);
                 setDrawerNested(view === 'sessions');
               }}
               currentSessionId={sessionId}
               onNewChat={startNewChat}
+              onNewChatIn={openNewChat}
               onOpenSession={openSession}
               onSessionActions={setActingSession}
               onNavigate={goTo}
@@ -1239,6 +1323,7 @@ const useStyles = makeStyles(t => ({
   agentName: {fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: t.t1, flexShrink: 1},
   body: {flex: 1},
   column: {width: '100%', maxWidth: CHAT_WIDTH, alignSelf: 'center'},
+  aiNotice: {fontSize: 11, lineHeight: 14, color: t.t3, textAlign: 'center', paddingBottom: 6},
   center: {flex: 1, alignItems: 'center', justifyContent: 'center'},
   // The list is inverted: flex-end is the visual top, so a short conversation starts there.
   list: {flexGrow: 1, justifyContent: 'flex-end', paddingTop: 20, paddingBottom: 8},

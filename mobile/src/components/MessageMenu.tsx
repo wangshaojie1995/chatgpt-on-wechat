@@ -38,6 +38,10 @@ type Anchor = {x: number; y: number; items: MessageMenuItems};
 const useMenu = create<{anchor: Anchor | null; selecting: string | null}>(() => ({anchor: null, selecting: null}));
 const closeMenu = () => useMenu.setState({anchor: null});
 
+/** Opens a message's menu at a screen point, for parts that already take taps through a Pressable. */
+export const openMessageMenu = (x: number, y: number, items: MessageMenuItems) =>
+  useMenu.setState({anchor: {x, y, items}});
+
 /**
  * A long press that opens a message's menu where the finger is.
  * A native gesture rather than a Pressable: on Android a pressed Pressable takes every later touch,
@@ -51,7 +55,7 @@ export function useMessageMenu(getItems: () => MessageMenuItems) {
       Gesture.LongPress()
         .minDuration(350)
         .runOnJS(true)
-        .onStart(e => useMenu.setState({anchor: {x: e.absoluteX, y: e.absoluteY, items: read.current()}})),
+        .onStart(e => openMessageMenu(e.absoluteX, e.absoluteY, read.current())),
     [],
   );
 }
@@ -165,15 +169,18 @@ function SelectableText({text}: {text: string}) {
   const t = useTheme();
   const styles = useStyles();
   return Platform.OS === 'ios' ? (
-    // On iOS only a text view selects part of a text; a Text copies it whole.
-    <TextInput
-      value={text}
-      editable={false}
-      multiline
-      scrollEnabled
-      selectionColor={t.accent}
-      style={[styles.text, styles.input]}
-    />
+    // On iOS only a text view selects part of a text; a Text copies it whole. A text view
+    // sized to its text does not scroll inside a sheet capped in height, so the page scrolls it.
+    <ScrollView style={styles.scroll}>
+      <TextInput
+        value={text}
+        editable={false}
+        multiline
+        scrollEnabled={false}
+        selectionColor={t.accent}
+        style={[styles.text, styles.input]}
+      />
+    </ScrollView>
   ) : (
     <ScrollView style={styles.scroll}>
       <Text selectable style={[styles.text, styles.plain]}>

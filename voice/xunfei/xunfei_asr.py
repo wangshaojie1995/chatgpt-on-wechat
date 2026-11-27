@@ -27,12 +27,14 @@ from wsgiref.handlers import format_date_time
 from datetime import datetime
 from time import mktime
 import _thread as thread
+from threading import Event, Lock
 import wave
 
 
 STATUS_FIRST_FRAME = 0  # 第一帧的标识
 STATUS_CONTINUE_FRAME = 1  # 中间帧标识
 STATUS_LAST_FRAME = 2  # 最后一帧的标识
+FINAL_RESULT_TIMEOUT = 5  # Seconds to wait after sending the last audio frame.
 
 #############
 #whole_dict 是用来存储返回值的，由于带语音修正，所以用dict来存储，有更新的化pop之前的值，最后再合并
@@ -92,24 +94,30 @@ class Ws_Param(object):
 # 收到websocket消息的处理
 def on_message(ws, message):
     global whole_dict
+    is_final = False
     try:
-        code = json.loads(message)["code"]
-        sid = json.loads(message)["sid"]
+        response = json.loads(message)
+        code = response["code"]
         if code != 0:
-            errMsg = json.loads(message)["message"]
+            sid = response.get("sid")
+            errMsg = response["message"]
             print("sid:%s call error:%s code is:%s" % (sid, errMsg, code))
         else:
-            temp1 = json.loads(message)["data"]["result"]
-            data = json.loads(message)["data"]["result"]["ws"]
+            response_data = response["data"]
+            is_final = response_data.get("status") == STATUS_LAST_FRAME
+            temp1 = response_data.get("result")
+            if is_final and temp1 is None:
+                return
+            data = temp1["ws"]
             sn = temp1["sn"]
             if "rg" in temp1.keys():
                 rep = temp1["rg"]
                 rep_start = rep[0]
                 rep_end = rep[1]
-                for sn in range(rep_start,rep_end+1):
+                for replaced_sn in range(rep_start,rep_end+1):
                     #print("before pop",whole_dict)
                     #print("sn",sn)
-                    whole_dict.pop(sn,None)
+                    whole_dict.pop(replaced_sn,None)
                     #print("after pop",whole_dict)
                 results = ""
                 for i in data:
@@ -126,6 +134,9 @@ def on_message(ws, message):
             #print("sid:%s call success!,data is:%s" % (sid, json.dumps(data, ensure_ascii=False)))
     except Exception as e:
         print("receive msg,but parse exception:", e)
+    finally:
+        if is_final:
+            ws.final_result_received.set()
 
 
 
@@ -175,7 +186,7 @@ def on_open(ws):
                                   "audio": str(base64.b64encode(buf), 'utf-8'),
                                   "encoding": "raw"}}
                     ws.send(json.dumps(d))
-                    time.sleep(1)
+                    ws.final_result_received.wait(FINAL_RESULT_TIMEOUT)
                     break
                 # 模拟音频采样间隔
                 time.sleep(intervel)
@@ -183,25 +194,31 @@ def on_open(ws):
 
     thread.start_new_thread(run, ())
 
+_call_lock = Lock()
+
 #提供给xunfei_voice调用的函数
 def xunfei_asr(APPID,APISecret,APIKey,BusinessArgsASR,AudioFile):
     global whole_dict
     global wsParam
-    whole_dict = {}
-    wsParam1 = Ws_Param(APPID=APPID, APISecret=APISecret,
-                       APIKey=APIKey,BusinessArgs=BusinessArgsASR,
-                       AudioFile=AudioFile)
-    #wsParam是global变量，给上面on_open函数调用使用的
-    wsParam = wsParam1
-    websocket.enableTrace(False)
-    wsUrl = wsParam.create_url()
-    ws = websocket.WebSocketApp(wsUrl, on_message=on_message, on_error=on_error, on_close=on_close)
-    ws.on_open = on_open
-    ws.run_forever(sslopt={"context": ssl.create_default_context()})
-    #把字典的值合并起来做最后识别的输出
-    whole_words = ""
-    for i in sorted(whole_dict.keys()):
-        whole_words += whole_dict[i]
-    return whole_words
+    # wsParam and whole_dict are module globals that the callbacks read, so a second
+    # call made while one is running would send its audio and clear its transcript.
+    with _call_lock:
+        whole_dict = {}
+        wsParam1 = Ws_Param(APPID=APPID, APISecret=APISecret,
+                           APIKey=APIKey,BusinessArgs=BusinessArgsASR,
+                           AudioFile=AudioFile)
+        #wsParam是global变量，给上面on_open函数调用使用的
+        wsParam = wsParam1
+        websocket.enableTrace(False)
+        wsUrl = wsParam.create_url()
+        ws = websocket.WebSocketApp(wsUrl, on_message=on_message, on_error=on_error, on_close=on_close)
+        ws.final_result_received = Event()
+        ws.on_open = on_open
+        ws.run_forever(sslopt={"context": ssl.create_default_context()})
+        #把字典的值合并起来做最后识别的输出
+        whole_words = ""
+        for i in sorted(whole_dict.keys()):
+            whole_words += whole_dict[i]
+        return whole_words
 
      

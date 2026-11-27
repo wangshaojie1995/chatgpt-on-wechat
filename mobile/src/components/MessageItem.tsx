@@ -52,7 +52,7 @@ import {Icon} from './Icon';
 import {RowToggleContext, useAnchoredRow, useRowToggle} from './listAnchor';
 import {Markdown} from './Markdown';
 import {PhoneTrust} from './PhoneTrust';
-import {copyMessage, useMessageMenu} from './MessageMenu';
+import {copyMessage, openMessageMenu, useMessageMenu, type MessageMenuItems} from './MessageMenu';
 const MONO = Platform.select({ios: 'Menlo', default: 'monospace'});
 const ROW_PADDING = 14;
 const AVATAR = 28;
@@ -276,16 +276,18 @@ function AssistantTurn({
   const t = useTheme();
   const styles = useStyles();
   const speaker = useSpeaker(message.speaker);
-  const row = useAnchoredRow(newest);
+  const row = useAnchoredRow(message.id, newest);
   const [showAll, setShowAll] = useState(false);
-  const menuGesture = useMessageMenu(() => ({
-    text: message.content,
-    plain: markdownText(message.content),
+  // Every text in the reply opens the same menu; copy takes the part pressed, retry the whole turn.
+  const menuFor = (text: string): MessageMenuItems => ({
+    text,
+    plain: markdownText(text),
     actions:
       message.userSeq !== undefined && onRetry && !message.streaming
         ? [{icon: faRotateRight, label: tr('chat_retry'), onPress: () => onRetry(message)}]
         : [],
-  }));
+  });
+  const menuGesture = useMessageMenu(() => menuFor(message.content));
   const steps = message.steps ?? [];
   const foldable = !message.streaming && steps.length > FOLD_AFTER;
   const folded = foldable && !showAll;
@@ -313,6 +315,8 @@ function AssistantTurn({
   const dotsRoom = !!message.streaming && !waiting;
   const hasAnswer =
     !!message.content || !!files.length || !!message.cancelled || !!message.runState || !!message.error;
+  // Steps end in a divider with its own spacing, so only text or files push the notes below down.
+  const afterBody = !!message.content || !!files.length;
 
   return (
     <RowToggleContext.Provider value={row.toggle}>
@@ -352,7 +356,13 @@ function AssistantTurn({
                   <SentFile key={step.id} file={step.file!} carded={files} />
                 ))}
                 {shown.map(step => (
-                  <StepRow key={step.id} step={step} live={step.id === liveThinking} carded={files} />
+                  <StepRow
+                    key={step.id}
+                    step={step}
+                    live={step.id === liveThinking}
+                    carded={files}
+                    menuFor={menuFor}
+                  />
                 ))}
               </View>
             )}
@@ -390,13 +400,13 @@ function AssistantTurn({
             )}
 
             {message.cancelled && (
-              <View style={styles.status}>
+              <View style={[styles.status, afterBody && styles.statusAfterBody]}>
                 <Icon icon={faStop} size={9} color={t.t3} />
                 <Text style={styles.statusText}>{tr('chat_stopped')}</Text>
               </View>
             )}
             {!message.cancelled && message.runState && (
-              <View style={styles.status}>
+              <View style={[styles.status, afterBody && styles.statusAfterBody]}>
                 <Icon
                   icon={message.runState === 'running' ? faHourglassHalf : faCircleExclamation}
                   size={9}
@@ -407,7 +417,15 @@ function AssistantTurn({
                 </Text>
               </View>
             )}
-            {!!message.error && <Text style={styles.error}>{message.error}</Text>}
+            {!!message.error && (
+              <Text
+                style={[
+                  styles.error,
+                  (afterBody || !!message.cancelled || !!message.runState) && styles.errorAfterBody,
+                ]}>
+                {message.error}
+              </Text>
+            )}
           </View>
           {!message.streaming && (
             <MetaLine message={message} onOpenContext={onOpenContext} onRetry={onRetry} />
@@ -443,23 +461,55 @@ function useStalled(active: boolean, progress: string): boolean {
   return stalled;
 }
 
-function StepRow({step, live, carded}: {step: Step; live: boolean; carded: ChatFile[]}) {
-  const styles = useStyles();
+/**
+ * Copy and select through a long press. Selectable text in the inverted list takes focus on a tap,
+ * and Android scrolls the list to the wrong place to reveal it.
+ */
+function HoldToCopy({text, plain, children}: {text: string; plain?: string; children: React.ReactNode}) {
+  const menu = useMessageMenu(() => ({text, plain: plain ?? text, actions: []}));
+  return (
+    <GestureDetector gesture={menu}>
+      <View>{children}</View>
+    </GestureDetector>
+  );
+}
+
+type MenuFor = (text: string) => MessageMenuItems;
+
+function StepRow({
+  step,
+  live,
+  carded,
+  menuFor,
+}: {
+  step: Step;
+  live: boolean;
+  carded: ChatFile[];
+  menuFor: MenuFor;
+}) {
   if (step.kind === 'text') {
-    return (
-      <View style={styles.note}>
-        <Markdown value={step.text} compact inset={BUBBLE_INSET} />
-      </View>
-    );
+    return <StepText text={step.text} menuFor={menuFor} />;
   }
   if (step.kind === 'thinking') {
-    return <Thinking text={step.text} seconds={step.seconds} live={live} />;
+    return <Thinking text={step.text} seconds={step.seconds} live={live} menuFor={menuFor} />;
   }
   return (
     <>
       <ToolCard step={step} />
       {!!step.file && <SentFile file={step.file} carded={carded} />}
     </>
+  );
+}
+
+/** Text the Agent wrote between tool calls, set like the reply itself. */
+function StepText({text, menuFor}: {text: string; menuFor: MenuFor}) {
+  const gesture = useMessageMenu(() => menuFor(text));
+  return (
+    <GestureDetector gesture={gesture}>
+      <View>
+        <Markdown value={text} inset={BUBBLE_INSET} selectable={false} />
+      </View>
+    </GestureDetector>
   );
 }
 
@@ -496,7 +546,17 @@ function Chevron({open}: {open: boolean}) {
 // Amber, the same in both themes.
 const BULB = '#FBBF24';
 
-function Thinking({text, seconds, live}: {text: string; seconds?: number; live: boolean}) {
+function Thinking({
+  text,
+  seconds,
+  live,
+  menuFor,
+}: {
+  text: string;
+  seconds?: number;
+  live: boolean;
+  menuFor: MenuFor;
+}) {
   const styles = useStyles();
   const toggle = useRowToggle();
   const [userOpen, setUserOpen] = useState(false);
@@ -507,6 +567,8 @@ function Thinking({text, seconds, live}: {text: string; seconds?: number; live: 
       accessibilityState={{expanded: open}}
       disabled={live}
       onPress={() => toggle(() => setUserOpen(v => !v))}
+      onLongPress={e => openMessageMenu(e.nativeEvent.pageX, e.nativeEvent.pageY, menuFor(text.trim()))}
+      delayLongPress={350}
       style={({pressed}) => [styles.thinking, pressed && styles.pressed]}>
       <View style={styles.stepHead}>
         <Icon icon={faLightbulb} size={11} color={BULB} />
@@ -520,7 +582,6 @@ function Thinking({text, seconds, live}: {text: string; seconds?: number; live: 
         {!live && <Chevron open={open} />}
       </View>
       <Text
-        selectable={open}
         style={styles.thinkText}
         numberOfLines={open ? undefined : 2}>
         {text.trim()}
@@ -658,9 +719,11 @@ function Pre({text, error}: {text: string; error?: boolean}) {
   const cut = text.length > DETAIL_MAX_CHARS;
   return (
     <ScrollView style={styles.preScroll} nestedScrollEnabled>
-      <Text selectable style={[styles.pre, error && styles.preError]}>
-        {cut ? `${text.slice(0, DETAIL_MAX_CHARS)}…` : text}
-      </Text>
+      <HoldToCopy text={text}>
+        <Text style={[styles.pre, error && styles.preError]}>
+          {cut ? `${text.slice(0, DETAIL_MAX_CHARS)}…` : text}
+        </Text>
+      </HoldToCopy>
       {cut && (
         <Text style={styles.preNote}>{trf('chat_output_truncated', {max: DETAIL_MAX_CHARS, total: text.length})}</Text>
       )}
@@ -697,7 +760,9 @@ function ToolDetail({step}: {step: ToolStep}) {
           <Text style={styles.sectionLabel}>{failed ? 'ERROR' : 'OUTPUT'}</Text>
           {step.display ? (
             <ScrollView style={styles.display} nestedScrollEnabled>
-              <Markdown value={step.display} compact inset={BUBBLE_INSET + 40} />
+              <HoldToCopy text={step.display} plain={markdownText(step.display)}>
+                <Markdown value={step.display} compact inset={BUBBLE_INSET + 40} selectable={false} />
+              </HoldToCopy>
             </ScrollView>
           ) : output ? (
             <Pre text={step.result ? prettyResult(step.result) : asText(output)} error={failed} />
@@ -862,7 +927,6 @@ const useStyles = makeStyles(t => {
     waiting: {paddingVertical: 6},
     working: {paddingTop: 8, paddingBottom: 2},
     workingIdle: {height: WORKING_DOT},
-    note: {paddingHorizontal: 2},
     sent: {marginLeft: 18, marginTop: 2, marginBottom: 2},
     files: {gap: 8},
     filesAfterText: {marginTop: 10},
@@ -913,10 +977,10 @@ const useStyles = makeStyles(t => {
     subFailed: {color: t.danger},
     subTime: {fontSize: 10.5, color: t.t4, fontVariant: ['tabular-nums']},
 
-    status: {flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6},
+    status: {flexDirection: 'row', alignItems: 'center', gap: 6},
+    statusAfterBody: {marginTop: 6},
     statusText: {fontSize: 12, color: t.t3},
     error: {
-      marginTop: 8,
       paddingHorizontal: 12,
       paddingVertical: 9,
       borderRadius: radius.sm,
@@ -926,6 +990,7 @@ const useStyles = makeStyles(t => {
       backgroundColor: t.dangerSoft,
       overflow: 'hidden',
     },
+    errorAfterBody: {marginTop: 8},
     meta: {
       fontSize: 11,
       color: t.t4,

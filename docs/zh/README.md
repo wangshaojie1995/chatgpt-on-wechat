@@ -24,7 +24,7 @@ CowAgent 支持多模型、多通道、多智能体，轻量且易于扩展，�
 <p align="center">
   <a href="https://cowagent.cn/?utm_source=github">🌐 官网</a> &nbsp;·&nbsp;
   <a href="https://docs.cowagent.ai/zh/">📖 文档中心</a> &nbsp;·&nbsp;
-  <a href="https://docs.cowagent.ai/zh/guide/quick-start">🚀 快速开始</a> &nbsp;·&nbsp;
+  <a href="https://docs.cowagent.ai/zh/guide">🚀 快速开始</a> &nbsp;·&nbsp;
   <a href="https://skills.cowagent.ai/">🧩 技能广场</a> &nbsp;·&nbsp;
   <a href="https://cowagent.cn/zh/download/">💻 下载客户端</a> &nbsp;·&nbsp;
   <a href="https://cloud.cowagent.cn/?utm_source=github">☁️ 在线使用</a>
@@ -58,6 +58,7 @@ CowAgent 支持多模型、多通道、多智能体，轻量且易于扩展，�
 | 多模态 | 文本、图片、语音、文件全消息类型支持，覆盖识别、生成、收发 |
 | [模型](https://docs.cowagent.ai/zh/models) | DeepSeek、Claude、Gemini、GPT、GLM、Qwen、Kimi、MiniMax、Doubao 等主流厂商，配置一行切换 |
 | [部署](https://docs.cowagent.ai/zh/guide/quick-start) | 一键脚本安装或桌面客户端，Web 控制台统一管理；支持本地、Docker、服务器多种部署方式 |
+| [移动端](https://docs.cowagent.ai/zh/guide/mobile) | iOS / Android / 鸿蒙 App（公开测试），可在手机上运行 Agent，或扫码连接电脑、服务器上的 CowAgent |
 
 <br/>
 
@@ -72,6 +73,10 @@ CowAgent 是一个完整的 **Agent Harness**：消息从各类**通道**进入�
 <br/>
 
 ## 🚀 快速开始
+
+CowAgent 支持源码部署、桌面客户端、移动端和云端托管四种使用方式，可按运行位置和使用场景选择，详见 [选择使用方式](https://docs.cowagent.ai/zh/guide)。
+
+### 源码部署
 
 项目提供一键安装脚本，自动完成依赖安装、配置和启动：
 
@@ -98,7 +103,7 @@ docker compose up -d
 
 > 服务器部署且需要公网访问控制台时，请在 `config.json` 中将 `web_host` 设为 `0.0.0.0`（同时强烈建议设置 `web_password` 启用鉴权），然后访问 `http://<server-ip>:9899`，并确保防火墙/安全组放行 `9899` 端口。
 
-> 📖 详细安装指南：[快速开始](https://docs.cowagent.ai/zh/guide/quick-start) · [源码安装](https://docs.cowagent.ai/zh/guide/manual-install) · [升级](https://docs.cowagent.ai/zh/guide/upgrade)
+> 📖 详细安装指南：[一键源码安装](https://docs.cowagent.ai/zh/guide/quick-start) · [源码安装](https://docs.cowagent.ai/zh/guide/manual-install) · [升级](https://docs.cowagent.ai/zh/guide/upgrade)
 
 安装后可使用 `cow` [CLI 命令](https://docs.cowagent.ai/zh/cli) 管理服务：
 
@@ -108,11 +113,20 @@ cow status | logs                  # 状态和日志
 cow update                         # 拉取最新代码并重启
 cow skill install <名称>           # 安装技能
 cow install-browser                # 安装浏览器工具
+cow pair                           # 生成配对码，连接手机等设备
 ```
 
-> 💻 桌面客户端：前往 **[下载 CowAgent 桌面客户端](https://cowagent.cn/zh/download/)**（macOS / Windows），内置 Agent 运行环境，开箱即用。
+### 桌面客户端
 
-> ☁️ 在线使用：不想自己部署，也可以直接 **[打开云端控制台](https://cloud.cowagent.cn/?utm_source=github)** 创建专属实例，内置模型服务，7×24 小时在线。
+💻 前往 **[下载 CowAgent 桌面客户端](https://cowagent.cn/zh/download/)**（macOS / Windows），内置 Agent 运行环境，开箱即用，详见 [桌面客户端](https://docs.cowagent.ai/zh/guide/desktop)。
+
+### 移动端
+
+📱 **[下载 CowAgent App](https://cowagent.cn/zh/download/#mobile)**（iOS / Android / 鸿蒙，公开测试），可直接在手机上运行，也可扫码连接电脑或服务器，详见 [移动端](https://docs.cowagent.ai/zh/guide/mobile)。
+
+### 云端托管
+
+☁️ 不想自己部署，也可以直接 **[打开云端控制台](https://cloud.cowagent.cn/?utm_source=github)** 创建专属实例，内置模型服务，7×24 小时在线，详见 [云端托管](https://docs.cowagent.ai/zh/guide/cloud)。
 
 <br/>
 
@@ -132,10 +146,10 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 | 厂商 | 代表模型 | 文本 | 图像理解 | 图像生成 | 语音识别 | 语音合成 | 向量 |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](https://docs.cowagent.ai/zh/models/deepseek) | deepseek-flash (V4.1) / pro | ✅ | ✅ | | | | |
+| [DeepSeek](https://docs.cowagent.ai/zh/models/deepseek) | deepseek-flash (V4.1) / pro | ✅ | ✅ | | ✅ | ✅ | |
 | [Claude](https://docs.cowagent.ai/zh/models/claude) | claude-opus-5-5 / sonnet-5-5 | ✅ | ✅ | | | | |
 | [OpenAI](https://docs.cowagent.ai/zh/models/openai) | gpt-6.2-sol / gpt-6.2-astra | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](https://docs.cowagent.ai/zh/models/gemini) | gemini-4-argon | ✅ | ✅ | ✅ | | | |
+| [Gemini](https://docs.cowagent.ai/zh/models/gemini) | gemini-4-neon | ✅ | ✅ | ✅ | | | |
 | [MiniMax](https://docs.cowagent.ai/zh/models/minimax) | MiniMax-M3.1-Flash / M3 | ✅ | ✅ | ✅ | | ✅ | |
 | [智谱 GLM](https://docs.cowagent.ai/zh/models/glm) | glm-5.3-flash、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
 | [通义千问](https://docs.cowagent.ai/zh/models/qwen) | qwen3.8-flash | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -145,7 +159,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 | [小米 MiMo](https://docs.cowagent.ai/zh/models/mimo) | mimo-v2.6-pro / v2.6-flash | ✅ | ✅ | | ✅ | ✅ | |
 | [CowAgent](https://docs.cowagent.ai/zh/models/cowagent) | 一个 Key 接入 DeepSeek / Claude / GPT 等 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [LinkAI](https://docs.cowagent.ai/zh/models/linkai) | LinkAI 平台模型接入 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [自定义](https://docs.cowagent.ai/zh/models/custom) | 本地模型 / 三方代理 | ✅ | | | | | |
+| [自定义](https://docs.cowagent.ai/zh/models/custom) | 本地模型 / 三方代理 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 > 推荐通过 Web 控制台在线配置，无需手动编辑文件。手动配置请参考各厂商文档，详见 [模型概览](https://docs.cowagent.ai/zh/models)。
 
@@ -231,6 +245,8 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 <br/>
 
 ## 🏷 更新日志
+
+> **2026.11.25：** [v2.3.0](https://github.com/zhayujie/CowAgent/releases/tag/2.3.0) — 发布移动端 App（iOS / Android / 鸿蒙，公开测试）、新增设备管理与多设备连接、新增 CowAgent 模型服务与 Codex 订阅接入、工具、通道与安全性完善
 
 > **2026.10.30：** [v2.2.2](https://github.com/zhayujie/CowAgent/releases/tag/2.2.2) — 新增访客独立页面和窗口嵌入、支持自定义主题、主模型原生多模态输入、新模型接入、工具、通道与安全性完善
 
