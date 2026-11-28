@@ -727,3 +727,82 @@ def test_windows_reserved_device_names_are_rejected(tmp_path):
         assert (tmp_path / "knowledge" / path).read_text(encoding="utf-8") == "# ok\n"
     category = svc.dispatch("create_category", {"path": "convention"})
     assert category["payload"]["created"] is True
+
+
+def _count_opens(target):
+    """Patch builtins.open and count the calls that open ``target``'s files."""
+    import builtins
+    real_open = builtins.open
+    opened = []
+
+    def spy(file, *args, **kwargs):
+        if str(file).startswith(str(target)):
+            opened.append(str(file))
+        return real_open(file, *args, **kwargs)
+
+    return patch("builtins.open", spy), opened
+
+
+def test_listing_reuses_cached_titles_until_a_page_changes(tmp_path):
+    svc, _ = service(tmp_path)
+    root = tmp_path / "knowledge"
+    (root / "notes").mkdir(parents=True)
+    page = root / "notes" / "a.md"
+    page.write_text("# First title\n", encoding="utf-8")
+    (root / "notes" / "b.md").write_text("\n\n# Below blank lines\n", encoding="utf-8")
+    (root / "notes" / "c.md").write_text("\ufeff# With BOM\n", encoding="utf-8")
+
+    titles = {f["name"]: f["title"] for f in svc.list_tree()["tree"][0]["files"]}
+    assert titles == {"a.md": "First title", "b.md": "Below blank lines", "c.md": "With BOM"}
+
+    spy, opened = _count_opens(root)
+    with spy:
+        svc.list_tree()
+    assert opened == []
+
+    page.write_text("# Second title, longer\n", encoding="utf-8")
+    with spy:
+        files = svc.list_tree()["tree"][0]["files"]
+    assert opened == [str(page)]
+    assert files[0]["title"] == "Second title, longer"
+
+
+def test_graph_shares_the_page_cache_and_rereads_only_changed_pages(tmp_path):
+    svc, _ = service(tmp_path)
+    root = tmp_path / "knowledge"
+    (root / "notes").mkdir(parents=True)
+    (root / "notes" / "a.md").write_text("# A\n\nSee [B](b.md).\n", encoding="utf-8")
+    (root / "notes" / "b.md").write_text("# B\n", encoding="utf-8")
+
+    svc.list_tree()
+    graph = svc.build_graph()
+    assert graph["links"] == [{"source": "notes/a.md", "target": "notes/b.md"}]
+
+    spy, opened = _count_opens(root)
+    with spy:
+        again = svc.build_graph()
+        svc.list_tree()
+    assert opened == []
+    assert again == graph
+
+    (root / "notes" / "b.md").write_text("# B renamed\n\n[A](a.md)\n", encoding="utf-8")
+    with spy:
+        labels = {n["id"]: n["label"] for n in svc.build_graph()["nodes"]}
+    assert opened == [str(root / "notes" / "b.md")]
+    assert labels["notes/b.md"] == "B renamed"
+
+
+def test_listing_skips_symlinked_folders(tmp_path):
+    svc, _ = service(tmp_path)
+    root = tmp_path / "knowledge"
+    (root / "notes").mkdir(parents=True)
+    (root / "notes" / "a.md").write_text("# A\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("# Secret\n", encoding="utf-8")
+    try:
+        os.symlink(outside, root / "linked", target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+
+    assert [group["dir"] for group in svc.list_tree()["tree"]] == ["notes"]

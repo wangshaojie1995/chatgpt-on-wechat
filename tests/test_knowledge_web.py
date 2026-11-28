@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -94,7 +95,7 @@ def test_knowledge_frontend_management_contract():
     assert "fetch(_kbUrl('/api/knowledge/import')" in js
     assert "initKnowledgeImportDropZone()" in js
 
-    knowledge_section = js[js.index("// Knowledge View"):js.index("function _hasFilterMatch")]
+    knowledge_section = js[js.index("// Knowledge View"):js.index("function resolveKnowledgePath")]
     assert "prompt(" not in knowledge_section
     assert "alert(" not in knowledge_section
     assert "if (path === 'index.md' || path === 'log.md') return '';" in knowledge_section
@@ -118,11 +119,10 @@ def test_knowledge_document_editor_contract():
     assert "data.payload?.conflict ? 'conflict' : data.code" in js
     # Every way out of an open text area asks before dropping what is in it.
     assert "memoryEditor.guard(next) && skillEditor.guard(next) && knowledgeEditor.guard(next)" in js
-    for leaving in ("openKnowledgeFile(path, title)", "switchKnowledgeTab(tab)",
+    for leaving in ("openKnowledgeFile(path, title, reveal)", "switchKnowledgeTab(tab)",
                     "selectKnowledgeAgent(agentId)", "knowledgeMobileBack",
-                    # These end in loadKnowledgeView(), which redraws the tree
-                    # and the viewer with it, so they drop an open text area
-                    # just as surely as opening another document does.
+                    # These end in a tree refresh that may move or drop the
+                    # open page, so they ask before an open text area goes.
                     "createKnowledgeCategory", "createKnowledgeDocument",
                     "renameKnowledgeCategory(path)", "deleteKnowledgeCategory(path)",
                     "deleteKnowledgeDocument(path)", "moveKnowledgeDocument(path)",
@@ -179,3 +179,58 @@ def test_knowledge_import_handler_rejects_large_content_length(tmp_path):
     assert response["status"] == "error"
     assert response["code"] == 413
     assert response["message"] == "import batch too large"
+
+
+def _list_knowledge(tmp_path, accept_encoding):
+    from channel.web.api.knowledge import KnowledgeListHandler
+
+    headers = {}
+    with patch("channel.web.api.knowledge._require_auth"), \
+         patch("channel.web.api.knowledge.web.header", side_effect=lambda k, v: headers.__setitem__(k, v)), \
+         patch("channel.web.api.knowledge.web.input", return_value=SimpleNamespace(agent_id="default")), \
+         patch("channel.web.api.knowledge.web.ctx") as ctx, \
+         patch("channel.web.api.knowledge._request_agent_id", return_value="default"), \
+         patch("channel.web.api.knowledge._get_workspace_root", return_value=str(tmp_path)):
+        ctx.env = {"HTTP_ACCEPT_ENCODING": accept_encoding}
+        body = KnowledgeListHandler().GET()
+    return headers, body
+
+
+def test_knowledge_list_compresses_a_large_tree_for_gzip_clients(tmp_path):
+    import gzip
+
+    notes = tmp_path / "knowledge" / "notes"
+    notes.mkdir(parents=True)
+    for i in range(1500):
+        (notes / f"page-{i:04}.md").write_text(f"# Page title {i}\n", encoding="utf-8")
+
+    headers, body = _list_knowledge(tmp_path, "gzip, deflate, br")
+    assert headers.get("Content-Encoding") == "gzip"
+    data = json.loads(gzip.decompress(body))
+    assert data["status"] == "success"
+    assert len(data["tree"][0]["files"]) == 1500
+
+    headers, body = _list_knowledge(tmp_path, "")
+    assert "Content-Encoding" not in headers
+    assert len(json.loads(body)["tree"][0]["files"]) == 1500
+
+
+def test_knowledge_list_leaves_a_small_tree_uncompressed(tmp_path):
+    (tmp_path / "knowledge" / "notes").mkdir(parents=True)
+    (tmp_path / "knowledge" / "notes" / "a.md").write_text("# A\n", encoding="utf-8")
+
+    headers, body = _list_knowledge(tmp_path, "gzip")
+    assert "Content-Encoding" not in headers
+    assert json.loads(body)["tree"][0]["files"][0]["title"] == "A"
+
+
+def test_knowledge_page_lands_on_the_index_and_refreshes_its_agent_picker():
+    from conftest import console_js
+    js = console_js()
+
+    # With no page requested, the docs tab opens index.md, else the first page.
+    assert "tree.byPath.get('index.md') || tree.files[0]" in js
+    # A single Agent leaves nothing to pick, and a picker drawn before the
+    # roster loaded is redrawn once it arrives.
+    assert "el.style.display = options.length < 2 ? 'none' : '';" in js
+    assert "if (typeof renderKnowledgeAgentSelect === 'function') renderKnowledgeAgentSelect();" in js
